@@ -25,8 +25,9 @@ local networkParams = {
     batchSize = 20,
     validationBatchSize = 20,
     validationIterations = 7,
-    testGap = 47*2,
-    saveModelIterations = 47*20 -- iterations! Intead of Epoch
+    testGap = 47,
+    saveModelIterations = 47*20, -- iterations! Intead of Epoch
+    nfilts = 26 -- in order to infer the shape of tensor
 }
 --Parameters for the stochastic gradient descent (using the optim library).
 local sgdParams = {

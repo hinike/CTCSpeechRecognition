@@ -9,7 +9,7 @@ local Evaluator = require 'Evaluator'
 
 local WEREvaluator = torch.class('WEREvaluator')
 
-function WEREvaluator:__init(_path, mapper, testBatchSize, nbOfTestIterations, logsPath)
+function WEREvaluator:__init(_path, mapper, testBatchSize, nbOfTestIterations, logsPath, nfilts)
 
     self.testBatchSize = testBatchSize
     self.nbOfTestIterations = nbOfTestIterations
@@ -20,7 +20,7 @@ function WEREvaluator:__init(_path, mapper, testBatchSize, nbOfTestIterations, l
                                     require 'Loader'
                                 end,
                                 function()
-                                    testLoader = Loader(_path, testBatchSize)
+                                    testLoader = Loader(_path, testBatchSize, nfilts)
                                 end)
     self.pool:synchronize() -- needed?
 
