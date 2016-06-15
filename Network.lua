@@ -61,6 +61,7 @@ function Network:init(networkParams)
     self.modelTrainingPath = networkParams.modelTrainingPath or nil
     self.trainIteration = networkParams.trainIteration
     self.testGap = networkParams.testGap
+    self.nfilts = networkParams.nfilts
 
     self:makeDirectories({ self.logsTrainPath, self.logsValidationPath, self.modelTrainingPath })
 
@@ -87,13 +88,13 @@ function Network:init(networkParams)
                                     require 'Mapper'
                                 end,
                                 function()
-                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, networkParams.batchSize)
+                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, networkParams.batchSize, networkParams.nfilts)
                                     trainLoader:prep_sorted_inds()
                                 end)
     self.pool:synchronize() -- needed?
 
     self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper, networkParams.validationBatchSize,
-        networkParams.validationIterations, self.logsValidationPath)
+        networkParams.validationIterations, self.logsValidationPath, networkParams.nfilts)
 
     self.logger = optim.Logger(self.logsTrainPath .. 'train' .. suffix .. '.log')
     self.logger:setNames { 'loss', 'WER' }
@@ -167,6 +168,20 @@ function Network:trainNetwork(sgd_params)
                 labelBuf = label
                 sizesBuf = size
             end)
+
+
+        -- TODO debug
+--        local f = assert(io.open('debug.log', 'a'),'!!')
+--        print('============ batch_info ================')
+--        local N = specBuf:size(1)
+--        for i=1,N do
+--            print(specBuf[i][1]:size())
+--            print(labelBuf[i])
+--            print(#labelBuf[i])
+--            print(sizesBuf[i])
+--        end
+--        f:close()
+
         --------------------- fwd and bwd ---------------------
         sizes = self.calSizeOfSequences(sizes)
         if self.nGPU > 0 then
