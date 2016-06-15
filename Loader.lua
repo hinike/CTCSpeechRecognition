@@ -23,7 +23,7 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 local Loader = torch.class('Loader')
 
-function Loader:__init(_dir, batch_size, nfilts)
+function Loader:__init(_dir, batch_size)
 
     -- constants to indicate the loading style
     self.DEFAULT = 1
@@ -36,7 +36,6 @@ function Loader:__init(_dir, batch_size, nfilts)
     self._dir = _dir
 
     self.batch_size = batch_size
-    self.nfilts = nfilts
     self.cnt = 1
 
     -- get the size of lmdb
@@ -88,7 +87,7 @@ function Loader:prep_sorted_inds()
     -- those shorter than min_width are ignored
     local true_size = 0
     for i = 1, self.lmdb_size do
-        local lengthOfAudio = txn:get(i):size(1) / (4*self.nfilts) -- get the len of spect
+        local lengthOfAudio = txn:get(i):size(2) -- get the len of spect
         local lengthOfLabel = #(torch.deserialize(txn_label:get(i)))
 
         if lengthOfAudio >= self.min_width and cal_size(lengthOfAudio) >= lengthOfLabel then
@@ -169,20 +168,6 @@ function Loader:nxt_inds()
     return inds
 end
 
-function Loader:convert_tensor(btensor)
-    --[[
-        convert a 1d byte tensor to 2d float tensor.
-    --]]
-    
-    local num = btensor:size(1) / 4 -- assume real data is float 
-    local s = torch.FloatStorage(num, tonumber(torch.data(btensor, true)))
-    
-    assert(num % self.nfilts == 0, 'something wrong with the tensor dims')
-
-    return torch.FloatTensor(s, 1, torch.LongStorage{self.nfilts, num / self.nfilts})
-
-end
-
 function Loader:nxt_batch(mode, flag)
     --[[
         return a batch by loading from lmdb just-in-time
@@ -224,7 +209,7 @@ function Loader:nxt_batch(mode, flag)
     local cnt = 1
     -- reads out a batch and store in lists
     for _, ind in next, inds, nil do
-        local tensor = self:convert_tensor(txn_spect:get(ind, true))
+        local tensor = txn_spect:get(ind)
         local label = torch.deserialize(txn_label:get(ind))
 
         h = tensor:size(1)
@@ -247,13 +232,6 @@ function Loader:nxt_batch(mode, flag)
     if flag then txn_trans:abort(); self.db_trans:close() end
 
     if flag then return tensor_array, label_list, sizes_array, trans_list end
-
---    for i=1,20 do
---        print('===========================')
---        print(tensor_array[i][1]:size())
---        print(sizes_array[i])
---    end
-
     return tensor_array, label_list, sizes_array
 end
 
@@ -275,7 +253,7 @@ function Loader:nxt_default_batch(flag)
     local batch_cnt = 0
     while batch_cnt < self.batch_size do
         
-        local tensor = self:convert_tensor(txn_spect:get(self.cnt))
+        local tensor = txn_spect:get(self.cnt)
         local label = torch.deserialize(txn_label:get(self.cnt))
         local width = tensor:size(2)
 

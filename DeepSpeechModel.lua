@@ -54,20 +54,20 @@ local function deepSpeech(nGPU, isCUDNN, height)
     --[[
         Creates the covnet+rnn structure.
         
-        height: specify the nfilts of the feature, default is 26
+        height(optional): specify the height of input default is 129
     --]]
 
     local GRU = false
     local seqLengths = nn.Identity()()
     local input = nn.Identity()()
     local feature = nn.Sequential()
-    height = height or 26
-
+    height = height or 129 -- set to 129 if nil
+    
     -- (nInputPlane, nOutputPlane, kW, kH, [dW], [dH], [padW], [padH]) conv layers.
-    feature:add(nn.SpatialConvolution(1, 32, 41, 2, 2, 2))
+    feature:add(nn.SpatialConvolution(1, 32, 41, 11, 2, 2))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
-    feature:add(nn.SpatialConvolution(32, 32, 21, 2, 2, 1))
+    feature:add(nn.SpatialConvolution(32, 32, 21, 11, 2, 1))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
     feature:add(nn.SpatialMaxPooling(2, 2, 2, 2)) -- TODO the DS2 architecture does not include this layer, but mem overhead increases.
