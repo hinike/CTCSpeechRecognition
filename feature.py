@@ -37,16 +37,14 @@ def wav2logfbank(root_path, index_path, out_dir):
         feat = logfbank(sig, samplerate=rate).T
 
         with env.begin(write=True) as txn:
-            txn.put(str(cnts), np.float32(feat).tostring())
+            txn.put(str(cnts), np.float32(feat.clip(0)).tostring())
 
         cnts += 1
 
     print cnts, 'items are saved'
 
-
 if __name__ == '__main__':
     wav2logfbank(options.PATH1, options.PATH2, options.PATH3)
-#    foo()
 
 
 

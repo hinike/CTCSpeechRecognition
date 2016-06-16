@@ -65,6 +65,7 @@ function Loader:prep_sorted_inds()
     --[[
         prep a table for sorted inds, can detect previously saved table in lmdb folder
     --]]
+    
 
     print('preparing sorted indices..')
     local indicesFilePath = self._dir .. '/' .. 'sorted_inds_' .. self.min_width
@@ -88,7 +89,7 @@ function Loader:prep_sorted_inds()
     -- those shorter than min_width are ignored
     local true_size = 0
     for i = 1, self.lmdb_size do
-        local lengthOfAudio = txn:get(i):size(1) / (4*self.nfilts) -- get the len of spect
+        local lengthOfAudio = txn:get(i, true):size(1) / (4*self.nfilts) -- get the len of spect
         local lengthOfLabel = #(torch.deserialize(txn_label:get(i)))
 
         if lengthOfAudio >= self.min_width and cal_size(lengthOfAudio) >= lengthOfLabel then
@@ -275,7 +276,7 @@ function Loader:nxt_default_batch(flag)
     local batch_cnt = 0
     while batch_cnt < self.batch_size do
         
-        local tensor = self:convert_tensor(txn_spect:get(self.cnt))
+        local tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
         local label = torch.deserialize(txn_label:get(self.cnt))
         local width = tensor:size(2)
 
