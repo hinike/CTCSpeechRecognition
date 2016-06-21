@@ -4,6 +4,7 @@ require 'xlua'
 require 'lmdb'
 require 'torch'
 require 'Mapper'
+require 'math'
 
 -- manipulate with this object
 local util = {}
@@ -31,7 +32,9 @@ local function trans2tokens(line, _mapper)
     line = line:match("^%s*(.-)%s*$")
     for i = 1, #line do
         local character = line:sub(i, i)
-        table.insert(label, _mapper.alphabet2token[character])
+        local token = _mapper.alphabet2token[character]
+        -- ignore all symbol (e.g. ", . - ...") that are not in dict
+        if token ~= nil then table.insert(label, token) end
     end
 
     return label, line
@@ -161,6 +164,76 @@ function util.get_lens(lmdb_path)
     txn:abort()
     db_test:close()
 
+end
+
+function util.get_mean_std(lmdb_path)
+    --[[
+        compute mean and std of a lmdb. Intended for doing
+        normalization of spect features. May work for logfbank
+        feature
+
+        NOTE:
+            mean and std is computed be combining the mean&stds 
+            of small batches in log scale in order to prevent 
+            overflow:
+                m = (m1 + m2 + .. + mn) / n
+                std = sqrt((s1^2 + .. + sn^2) / n)
+    --]]
+    
+    local accum_mean, accum_std = nil
+    local cnt = 0
+    local db_train = lmdb.env{Path = lmdb_path..'/train/spect/', Name='spect'}
+    local db_test = lmdb.env{Path = lmdb_path..'/test/spect/', Name='spect'}
+    
+    local function logsumexp(a, b)
+        -- deal init case
+        if a == nil then return b end; if b == nil then return a end;
+        local max = math.max(a,b)
+        return max + torch.log(torch.exp(a-max)+torch.exp(b-max))
+    end
+
+    db_train:open()
+    db_test:open()
+
+    local num_train = db_train:stat()['entries']
+    local num_test = db_test:stat()['entries']
+
+    for k,v in ipairs({{db_train, num_train},{db_test, num_test}}) do
+        local txn = v[1]:txn(true)
+        local spect_cat = nil
+        for i=1,v[2] do
+            local tensor = txn:get(i)
+
+            if spect_cat == nil then 
+                spect_cat = tensor
+            else
+                spect_cat = torch.cat(spect_cat, tensor)
+            end
+
+            if i % 5 == 0 then
+                -- keep every thing in log scale in case of overflow
+                local mean = torch.log(torch.mean(spect_cat))
+                local std = torch.log(torch.std(spect_cat)^2)
+                accum_mean = logsumexp(accum_mean, mean)
+                accum_std = logsumexp(accum_std, std)
+
+                cnt = cnt + 1
+                spect_cat = nil
+            end
+            
+            if cnt % 20 == 0 then xlua.progress(cnt*5, num_train+num_test) end 
+        end
+        txn:abort()
+        v[1]:close()
+    end
+    xlua.progress(num_test+num_train, num_test+num_train)
+
+    accum_mean = torch.exp(accum_mean - torch.log(cnt))
+    accum_std = torch.exp((accum_std - torch.log(cnt))/2)
+    
+    print(string.format('mean is %.3f; std is %.3f', accum_mean, accum_std))
+    -- save to lmdb as metadata
+    torch.save(lmdb_path..'/mean_std', torch.Tensor({accum_mean, accum_std}))
 end
 
 return util
