@@ -118,4 +118,49 @@ function util.mk_lmdb(root_path, index_path, dict_path, out_dir, windowSize, str
     end_txn(db_trans, txn_trans)
 end
 
+function util.get_lens(lmdb_path)
+    --[[
+        reads out train and test lmdb and put data lengthes into a file
+
+        NOTE: only for spect features
+    --]]
+    
+    
+    local db_train = lmdb.env{Path = lmdb_path..'/train/spect/', Name='spect'}
+    local db_test = lmdb.env{Path = lmdb_path..'/test/spect/', Name='spect'}
+    
+    db_train:open()
+    db_test:open()
+
+    local num_train = db_train:stat()['entries']
+    local num_test = db_test:stat()['entries']
+
+    local txn = db_train:txn(true)
+    for i=1,num_train do
+        local tensor = txn:get(i)
+
+        local f = io.open('lmdb_lens', 'a')
+        f:write(string.format('%i\n',tensor:size(2)))
+        f:close()
+    end
+    txn:abort()
+    db_train:close()
+    
+    local f = io.open('lmdb_lens', 'a')
+    f:write('====================================')
+    f:close()
+
+    txn = db_test:txn(true)
+    for i=1,num_test do
+        local tensor = txn:get(i)
+
+        local f = io.open('lmdb_lens', 'a')
+        f:write(string.format('%i\n',tensor:size(2)))
+        f:close()
+    end
+    txn:abort()
+    db_test:close()
+
+end
+
 return util
