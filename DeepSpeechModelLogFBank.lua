@@ -23,6 +23,7 @@ local function getRNNModule(nIn, nHidden, GRU, is_cudnn)
     return nn.SeqLSTM(nIn, nHidden)
 end
 
+
 -- Wraps rnn module into bi-directional.
 local function BRNN(feat, seqLengths, rnnModule, rnnHiddenSize)
     local fwdLstm = nn.MaskRNN(rnnModule:clone())({ feat, seqLengths })
@@ -32,20 +33,21 @@ local function BRNN(feat, seqLengths, rnnModule, rnnHiddenSize)
     return rnn({ fwdLstm, bwdLstm })
 end
 
+
 -- Based on convolution kernel and strides.
 local function calculateInputSizes(sizes)
-    sizes = torch.floor((sizes - 41) / 2 + 1) -- conv1
-    sizes = torch.floor((sizes - 21) / 2 + 1) -- conv2
-    sizes = torch.floor((sizes - 2) / 2 + 1) -- pool1
+    sizes = torch.floor((sizes - 31) / 2 + 1) -- conv1
+    sizes = torch.floor((sizes - 11) / 2 + 1) -- conv2
+--    sizes = torch.floor((sizes - 2) / 2 + 1) -- pool1
     return sizes
 end
 
 
 local function get_min_width()
     local width = 1
-    width = (width+1) * 2 + 2
-    width = (width+1) * 2 + 21
-    width = (width+1) * 2 + 41
+--    width = (width+1) * 2 + 2
+    width = (width+1) * 2 + 11
+    width = (width+1) * 2 + 31
     return width
 end
 
@@ -53,29 +55,26 @@ end
 local function deepSpeech(nGPU, isCUDNN, height, dict_size)
     --[[
         Creates the covnet+rnn structure.
-        
-        height: specify the nfilts of the feature, default is 26
-        dict_size: specify the size of the dicitionary, ordinary digit is 11
+        input:
+            height: specify the dataHeight, typically 129 for spect; 26 for logfbank
+            dict_size = size of dictionary
     --]]
 
     local GRU = false
     local seqLengths = nn.Identity()()
     local input = nn.Identity()()
     local feature = nn.Sequential()
-    height = height or 26
-    dict_size = dict_size or 11
 
     -- (nInputPlane, nOutputPlane, kW, kH, [dW], [dH], [padW], [padH]) conv layers.
-    feature:add(nn.SpatialConvolution(1, 32, 41, 12, 2, 2))
+    feature:add(nn.SpatialConvolution(1, 32, 31, 12, 2, 2))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
-    feature:add(nn.SpatialConvolution(32, 32, 21, 2, 2, 1))
+    feature:add(nn.SpatialConvolution(32, 32, 11, 2, 2, 1))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
-    feature:add(nn.SpatialMaxPooling(2, 2, 2, 2)) -- TODO the DS2 architecture does not include this layer, but mem overhead increases.
+    -- TODO the DS2 architecture does not include this layer, but mem overhead increases.
+    --feature:add(nn.SpatialMaxPooling(2, 2, 2, 2)) 
 
-
-    -- TODO should ask arg for flogbank size, and compute this through variable 
     local tmp = torch.rand(1, 1, height, get_min_width()*2) --init something
     local rnnInputsize = 32 * feature:forward(tmp):size(3) -- outputPlanes X outputHeight
     local rnnHiddenSize = 400 -- size of rnn hidden layers

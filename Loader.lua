@@ -4,9 +4,13 @@ require 'lmdb'
 require 'xlua'
 require 'paths'
 tds = require 'tds'
-local model_t = require 'DeepSpeechModel'
-local cal_size = model_t[2]
-local get_min_width = model_t[3]
+
+-- get model specified methods into this module
+local model_t
+local cal_size
+local get_min_width
+
+local util = require 'Util'
 
 --[[
 
@@ -23,12 +27,22 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 local Loader = torch.class('Loader')
 
-function Loader:__init(_dir, batch_size, nfilts)
-
+function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
+    --[[
+        input:
+            feature: is it spect or logfbank we are using
+            dataHeight: typically 129 for spect; 26 for logfbank
+    --]]
+    
     -- constants to indicate the loading style
     self.DEFAULT = 1
     self.SAMELEN = 2
     self.SORTED = 3
+    
+    -- get model specified methods
+    model_t = require(modelname)
+    cal_size = model_t[2]
+    get_min_width = model_t[3]
 
     self.db_spect = lmdb.env { Path = _dir .. '/spect', Name = 'spect' }
     self.db_label = lmdb.env { Path = _dir .. '/label', Name = 'label' }
@@ -36,7 +50,8 @@ function Loader:__init(_dir, batch_size, nfilts)
     self._dir = _dir
 
     self.batch_size = batch_size
-    self.nfilts = nfilts
+    self.dataHeight = dataHeight
+    self.is_spect = feature == 'spect'
     self.cnt = 1
 
     -- get the size of lmdb
@@ -59,6 +74,28 @@ function Loader:__init(_dir, batch_size, nfilts)
     self.sorted_inds = {}
     self.len_num = 0 -- number of unique seqLengths
     self.min_width = get_min_width() --from DeepSpeech
+    
+    -- TODO do normalization for spect, may be also for logfbank in the future
+    if self.is_spect then
+        -- assume the super folder is the lmdb root folder
+        local lmdb_path = self._dir..'/../'
+
+        print('preparing mean and std of the dataset..')
+        if paths.filep(lmdb_path..'mean_std') then
+            print('found previously saved stats..')
+            local tensor = torch.load(lmdb_path..'mean_std')
+            self.mean = tensor[1]
+            self.std = tensor[2]
+            print(string.format('mean is %.3f; std is %.3f\n', self.mean, self.std))
+        else
+            print('did not find previously saved stats, generating..')
+            util.get_mean_std(lmdb_path)
+            local tensor = torch.load(lmdb_path..'mean_std')
+            self.mean = tensor[1]
+            self.std = tensor[2]
+        end
+    end
+
 end
 
 function Loader:prep_sorted_inds()
@@ -89,7 +126,14 @@ function Loader:prep_sorted_inds()
     -- those shorter than min_width are ignored
     local true_size = 0
     for i = 1, self.lmdb_size do
-        local lengthOfAudio = txn:get(i, true):size(1) / (4*self.nfilts) -- get the len of spect
+
+        local lengthOfAudio
+        if self.is_spect then
+            lengthOfAudio = txn:get(i):size(2)
+        else
+            lengthOfAudio = txn:get(i, true):size(1) / (4*self.dataHeight)
+        end
+
         local lengthOfLabel = #(torch.deserialize(txn_label:get(i)))
 
         if lengthOfAudio >= self.min_width and cal_size(lengthOfAudio) >= lengthOfLabel then
@@ -178,9 +222,9 @@ function Loader:convert_tensor(btensor)
     local num = btensor:size(1) / 4 -- assume real data is float 
     local s = torch.FloatStorage(num, tonumber(torch.data(btensor, true)))
     
-    assert(num % self.nfilts == 0, 'something wrong with the tensor dims')
+    assert(num % self.dataHeight == 0, 'something wrong with the tensor dims')
 
-    return torch.FloatTensor(s, 1, torch.LongStorage{self.nfilts, num / self.nfilts})
+    return torch.FloatTensor(s, 1, torch.LongStorage{self.dataHeight, num / self.dataHeight})
 
 end
 
@@ -225,7 +269,15 @@ function Loader:nxt_batch(mode, flag)
     local cnt = 1
     -- reads out a batch and store in lists
     for _, ind in next, inds, nil do
-        local tensor = self:convert_tensor(txn_spect:get(ind, true))
+        local tensor
+        if self.is_spect then
+            tensor = txn_spect:get(ind)
+            tensor:csub(self.mean)
+            tensor:div(self.std)
+        else
+            tensor = self:convert_tensor(txn_spect:get(ind, true))
+        end
+
         local label = torch.deserialize(txn_label:get(ind))
 
         h = tensor:size(1)
@@ -249,12 +301,6 @@ function Loader:nxt_batch(mode, flag)
 
     if flag then return tensor_array, label_list, sizes_array, trans_list end
 
---    for i=1,20 do
---        print('===========================')
---        print(tensor_array[i][1]:size())
---        print(sizes_array[i])
---    end
-
     return tensor_array, label_list, sizes_array
 end
 
@@ -275,8 +321,15 @@ function Loader:nxt_default_batch(flag)
     -- reads out a batch and store in lists
     local batch_cnt = 0
     while batch_cnt < self.batch_size do
-        
-        local tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
+        local tensor
+        if self.is_spect then
+            tensor = txn_spect:get(self.cnt)
+            tensor:csub(self.mean)
+            tensor:div(self.std)
+        else
+            tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
+        end
+
         local label = torch.deserialize(txn_label:get(self.cnt))
         local width = tensor:size(2)
 

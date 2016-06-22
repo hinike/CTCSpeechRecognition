@@ -5,6 +5,7 @@ require 'lmdb'
 require 'torch'
 require 'Mapper'
 require 'math'
+require 'paths'
 
 -- manipulate with this object
 local util = {}
@@ -182,6 +183,9 @@ function util.get_mean_std(lmdb_path)
     
     local accum_mean, accum_std = nil
     local cnt = 0
+
+    assert(paths.dirp(lmdb_path..'/train/spect/') and paths.dirp(lmdb_path..'/test/spect/'), 
+        'should specify lmdb root dir')
     local db_train = lmdb.env{Path = lmdb_path..'/train/spect/', Name='spect'}
     local db_test = lmdb.env{Path = lmdb_path..'/test/spect/', Name='spect'}
     
@@ -231,7 +235,7 @@ function util.get_mean_std(lmdb_path)
     accum_mean = torch.exp(accum_mean - torch.log(cnt))
     accum_std = torch.exp((accum_std - torch.log(cnt))/2)
     
-    print(string.format('mean is %.3f; std is %.3f', accum_mean, accum_std))
+    print(string.format('mean is %.3f; std is %.3f\n', accum_mean, accum_std))
     -- save to lmdb as metadata
     torch.save(lmdb_path..'/mean_std', torch.Tensor({accum_mean, accum_std}))
 end

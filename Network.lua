@@ -44,6 +44,7 @@ local function convertBN(net, dst)
     end)
 end
 
+
 function Network:init(networkParams)
 
     self.fileName = networkParams.fileName -- The file name to save/load the network from.
@@ -61,7 +62,9 @@ function Network:init(networkParams)
     self.modelTrainingPath = networkParams.modelTrainingPath or nil
     self.trainIteration = networkParams.trainIteration
     self.testGap = networkParams.testGap
-    self.nfilts = networkParams.nfilts
+
+    self.dataHeight = networkParams.dataHeight
+    self.feature = networkParams.dataHeight
 
     self:makeDirectories({ self.logsTrainPath, self.logsValidationPath, self.modelTrainingPath })
 
@@ -69,6 +72,8 @@ function Network:init(networkParams)
     self.saveModel = networkParams.saveModel
     self.loadModel = networkParams.loadModel
     self.saveModelIterations = networkParams.saveModelIterations or 1000 -- Saves model every number of iterations.
+
+    -- TODO may not work for current version
     -- setting model saving/loading
     if (self.loadModel) then
         assert(networkParams.fileName, "Filename hasn't been given to load model.")
@@ -77,35 +82,42 @@ function Network:init(networkParams)
             self.isCUDNN)
     else
         assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName)
+        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight, 
+            networkParams.dictSize)
     end
-    assert((networkParams.saveModel or networkParams.loadModel) and networkParams.fileName, "To save/load you must specify the fileName you want to save to")
+    assert((networkParams.saveModel or networkParams.loadModel) and 
+        networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     -- setting online loading
     self.pool = threads.Threads(1,
                                 function()
-                                    require 'Loader'
-                                    require 'Mapper'
+                                    require 'Loader';require 'Mapper'
                                 end,
                                 function()
-                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, networkParams.batchSize, networkParams.nfilts)
+                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, 
+                                        networkParams.batchSize, networkParams.feature, 
+                                        networkParams.dataHeight, networkParams.modelName)
                                     trainLoader:prep_sorted_inds()
                                 end)
     self.pool:synchronize() -- needed?
 
-    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper, networkParams.validationBatchSize,
-        networkParams.validationIterations, self.logsValidationPath, networkParams.nfilts)
+    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper, 
+        networkParams.validationBatchSize, networkParams.validationIterations, 
+        self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
+        networkParams.modelName)
 
     self.logger = optim.Logger(self.logsTrainPath .. 'train' .. suffix .. '.log')
     self.logger:setNames { 'loss', 'WER' }
     self.logger:style { '-', '-' }
 end
 
-function Network:prepSpeechModel(modelName)
+
+function Network:prepSpeechModel(modelName, dataHeight, dict_size)
     local model = require(modelName)
-    self.model = model[1](self.nGPU, self.isCUDNN)
+    self.model = model[1](self.nGPU, self.isCUDNN, dataHeight, dict_size)
     self.calSizeOfSequences = model[2]
 end
+
 
 function Network:testNetwork(currentIteration)
     self.model:evaluate()
@@ -120,6 +132,7 @@ function Network:testNetwork(currentIteration)
     self.model:training()
     return wer
 end
+
 
 function Network:trainNetwork(sgd_params)
     --[[
