@@ -2,7 +2,7 @@ require 'cunn'
 require 'rnn'
 require 'cudnn'
 require 'DataParallelTableTrans'
-local default_GPU = 1
+local default_GPU = 2
 function makeDataParallel(model, nGPU, is_cudnn)
      if nGPU >= 1 then
             if is_cudnn then
@@ -34,12 +34,12 @@ local function clear(tensor)
 end
 
 function saveDataParallel(filename, orgModel)
-    local model = orgModel:clone()
-    local model_type = torch.type(model)
-    model:clearState()
+    local model_type = torch.type(orgModel)
+    local model
     if model_type == 'nn.DataParallelTable' or
         model_type == 'nn.DataParallelTableTrans' then
-        model = model:get(1)
+        model = orgModel:get(1):clone()
+        model:clearState()
     elseif model_type == 'nn.Sequential' then
         local temp_model = nn.Sequential()
         for i, module in ipairs(model.modules) do

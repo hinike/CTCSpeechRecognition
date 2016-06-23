@@ -13,7 +13,7 @@ local function BLSTM(model, nIn, nHidden, is_cudnn)
         local ct = nn.ConcatTable():add(fwdLstm):add(bwdLstm)
         model:add(ct):add(nn.JoinTable(3))
     end
-    model:add(nn.BNDecorator(cudnn.BatchNormalization(2*nHidden, 1e-3)))
+    model:add(nn.BNDecorator(2*nHidden))
 end
 
 

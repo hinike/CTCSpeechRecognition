@@ -12,7 +12,7 @@ local networkParams = {
     loadModel = false,
     saveModel = true,
     backend = 'cudnn',
-    nGPU = 1, -- Number of GPUs, set -1 to use CPU
+    nGPU = 2, -- Number of GPUs, set -1 to use CPU
 
     -- these 5 usually need to change together
     modelName = 'DeepSpeechModelSpect',
@@ -39,8 +39,8 @@ local networkParams = {
     batchSize = 20,
     validationBatchSize = 26,
     validationIterations = 5,
-    testGap = 1,
-    saveModelIterations = 47*20, -- iterations! Intead of Epoch
+    testGap = 47,
+    saveModelIterations = 47*50, -- iterations! Intead of Epoch
 
 }
 --Parameters for the stochastic gradient descent (using the optim library).

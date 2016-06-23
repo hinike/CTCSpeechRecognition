@@ -29,7 +29,6 @@ function DataParallelTableTrans:updateOutput(input)
     if self.needsSync then
         self:syncParameters()
     end
-
     local prevGpuid = cutorch.getDevice()
 
     -- distribute the input to GPUs
@@ -50,12 +49,12 @@ function DataParallelTableTrans:updateOutput(input)
     return self.output
 end
 
-function DataParallelTableTrans:backward(input, target, scale)
-    return self:__backward_inner('backward', input, target, scale)
+function DataParallelTableTrans:backward(input, target, size, scale)
+    return self:__backward_inner('backward', input, target, size, scale)
 end
 
-function DataParallelTableTrans:updateGradInput(input, target)
-    return self:__backward_inner('updateGradInput', input, target)
+function DataParallelTableTrans:updateGradInput(input, target, size)
+    return self:__backward_inner('updateGradInput', input, target, size)
 end
 
 local function slice(tbl, first, last, step)
@@ -72,17 +71,16 @@ local function slice(tbl, first, last, step)
     return sliced
 end
 
-function DataParallelTableTrans:__backward_inner(method, input, target, scale)
+function DataParallelTableTrans:__backward_inner(method, input, target, size, scale)
     local prevGpuid = cutorch.getDevice()
     local inputGpu = self.inputGpu
     local outputGpu = self.outputGpu
-    local targetGpu, sizeGpu = {}, {}
+    local sizeGpu = {}
 
-    -- distribute the target to GPUs
-    for i = 1, #self.gpuAssignments do
-        table.insert(sizeGpu, inputGpu[i][2])
-    end
-    local batch_size = inputGpu[1][1]:size(1)
+    -- distribute the size to GPUs
+    self:_distribute(sizeGpu, size)
+
+    local batch_size = inputGpu[1]:size(1)
     local loss = torch.Tensor(#self.gpuAssignments)
     self.gradInputGpu = self.impl:exec(function(m, i)
         if torch.isTensor(inputGpu[i]) and inputGpu[i]:numel() == 0 then
