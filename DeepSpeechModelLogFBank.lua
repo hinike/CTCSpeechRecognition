@@ -36,8 +36,8 @@ end
 
 -- Based on convolution kernel and strides.
 local function calculateInputSizes(sizes)
-    sizes = torch.floor((sizes - 31) / 2 + 1) -- conv1
-    sizes = torch.floor((sizes - 11) / 2 + 1) -- conv2
+    sizes = torch.floor((sizes - 8) / 2 + 1) -- conv1
+    sizes = torch.floor((sizes - 8) / 2 + 1) -- conv2
 --    sizes = torch.floor((sizes - 2) / 2 + 1) -- pool1
     return sizes
 end
@@ -46,8 +46,8 @@ end
 local function get_min_width()
     local width = 1
 --    width = (width+1) * 2 + 2
-    width = (width+1) * 2 + 11
-    width = (width+1) * 2 + 31
+    width = (width+1) * 2 + 8
+    width = (width+1) * 2 + 8
     return width
 end
 
@@ -66,10 +66,10 @@ local function deepSpeech(nGPU, isCUDNN, height, dict_size)
     local feature = nn.Sequential()
 
     -- (nInputPlane, nOutputPlane, kW, kH, [dW], [dH], [padW], [padH]) conv layers.
-    feature:add(nn.SpatialConvolution(1, 32, 31, 12, 2, 2))
+    feature:add(nn.SpatialConvolution(1, 32, 8, 12, 2, 2))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
-    feature:add(nn.SpatialConvolution(32, 32, 11, 2, 2, 1))
+    feature:add(nn.SpatialConvolution(32, 32, 8, 2, 2, 1))
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
     -- TODO the DS2 architecture does not include this layer, but mem overhead increases.

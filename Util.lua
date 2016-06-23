@@ -122,7 +122,7 @@ function util.mk_lmdb(root_path, index_path, dict_path, out_dir, windowSize, str
     end_txn(db_trans, txn_trans)
 end
 
-function util.get_lens(lmdb_path)
+function util.get_lens(lmdb_path, dataHeight)
     --[[
         reads out train and test lmdb and put data lengthes into a file
 
@@ -141,7 +141,12 @@ function util.get_lens(lmdb_path)
 
     local txn = db_train:txn(true)
     for i=1,num_train do
-        local tensor = txn:get(i)
+        local tensor
+        if dataHeight == nil then
+            tensor = txn:get(i)
+        else
+            tensor = util.convert_tensor(txn:get(i, true), dataHeight)
+        end
 
         local f = io.open('lmdb_lens', 'a')
         f:write(string.format('%i\n',tensor:size(2)))
@@ -156,7 +161,12 @@ function util.get_lens(lmdb_path)
 
     txn = db_test:txn(true)
     for i=1,num_test do
-        local tensor = txn:get(i)
+        local tensor
+        if dataHeight == nil then
+            tensor = txn:get(i)
+        else
+            tensor = util.convert_tensor(txn:get(i, true), dataHeight)
+        end
 
         local f = io.open('lmdb_lens', 'a')
         f:write(string.format('%i\n',tensor:size(2)))
@@ -167,11 +177,27 @@ function util.get_lens(lmdb_path)
 
 end
 
-function util.get_mean_std(lmdb_path)
+function util.convert_tensor(btensor, dataHeight)
+    --[[
+        convert a 1d byte tensor to 2d float tensor.
+    --]]
+    
+    local num = btensor:size(1) / 4 -- assume real data is float 
+    local s = torch.FloatStorage(num, tonumber(torch.data(btensor, true)))
+    
+    assert(num % dataHeight == 0, 'something wrong with the tensor dims')
+
+    return torch.FloatTensor(s, 1, torch.LongStorage{dataHeight, num / dataHeight})
+
+end
+
+function util.get_mean_std(lmdb_path, dataHeight)
     --[[
         compute mean and std of a lmdb. Intended for doing
         normalization of spect features. May work for logfbank
         feature
+
+        dataHeight: optional. If set then assume it's logfbank feature
 
         NOTE:
             mean and std is computed be combining the mean&stds 
@@ -206,7 +232,13 @@ function util.get_mean_std(lmdb_path)
         local txn = v[1]:txn(true)
         local spect_cat = nil
         for i=1,v[2] do
-            local tensor = txn:get(i)
+            local tensor
+            if dataHeight == nil then
+                tensor = txn:get(i)
+            else          
+                tensor = util.convert_tensor(txn:get(i, true), dataHeight)
+            end
+
 
             if spect_cat == nil then 
                 spect_cat = tensor

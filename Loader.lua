@@ -75,25 +75,26 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
     self.len_num = 0 -- number of unique seqLengths
     self.min_width = get_min_width() --from DeepSpeech
     
-    -- TODO do normalization for spect, may be also for logfbank in the future
-    if self.is_spect then
-        -- assume the super folder is the lmdb root folder
-        local lmdb_path = self._dir..'/../'
+    -- assume the super folder is the lmdb root folder
+    local lmdb_path = self._dir..'/../'
 
-        print('preparing mean and std of the dataset..')
-        if paths.filep(lmdb_path..'mean_std') then
-            print('found previously saved stats..')
-            local tensor = torch.load(lmdb_path..'mean_std')
-            self.mean = tensor[1]
-            self.std = tensor[2]
-            print(string.format('mean is %.3f; std is %.3f\n', self.mean, self.std))
-        else
-            print('did not find previously saved stats, generating..')
+    print('preparing mean and std of the dataset..')
+    if paths.filep(lmdb_path..'mean_std') then
+        print('found previously saved stats..')
+        local tensor = torch.load(lmdb_path..'mean_std')
+        self.mean = tensor[1]
+        self.std = tensor[2]
+        print(string.format('mean is %.3f; std is %.3f\n', self.mean, self.std))
+    else
+        print('did not find previously saved stats, generating..')
+        if feature == 'spect' then
             util.get_mean_std(lmdb_path)
-            local tensor = torch.load(lmdb_path..'mean_std')
-            self.mean = tensor[1]
-            self.std = tensor[2]
+        else
+            util.get_mean_std(lmdb_path, dataHeight)
         end
+        local tensor = torch.load(lmdb_path..'mean_std')
+        self.mean = tensor[1]
+        self.std = tensor[2]
     end
 
 end
@@ -271,12 +272,12 @@ function Loader:nxt_batch(mode, flag)
     for _, ind in next, inds, nil do
         local tensor
         if self.is_spect then
-            tensor = txn_spect:get(ind)
-            tensor:csub(self.mean)
-            tensor:div(self.std)
+            tensor = txn_spect:get(ind)            
         else
             tensor = self:convert_tensor(txn_spect:get(ind, true))
         end
+        tensor:csub(self.mean)
+        tensor:div(self.std)
 
         local label = torch.deserialize(txn_label:get(ind))
 
@@ -323,12 +324,12 @@ function Loader:nxt_default_batch(flag)
     while batch_cnt < self.batch_size do
         local tensor
         if self.is_spect then
-            tensor = txn_spect:get(self.cnt)
-            tensor:csub(self.mean)
-            tensor:div(self.std)
+            tensor = txn_spect:get(self.cnt) 
         else
             tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
         end
+        tensor:csub(self.mean)
+        tensor:div(self.std)
 
         local label = torch.deserialize(txn_label:get(self.cnt))
         local width = tensor:size(2)
