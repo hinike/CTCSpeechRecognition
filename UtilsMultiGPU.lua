@@ -1,8 +1,5 @@
 require 'cunn'
 require 'rnn'
-require 'nngraph'
-require 'MaskRNN'
-require 'ReverseMaskRNN'
 require 'cudnn'
 require 'DataParallelTableTrans'
 local default_GPU = 1
@@ -18,11 +15,9 @@ function makeDataParallel(model, nGPU, is_cudnn)
                 dpt = nn.DataParallelTableTrans(1, true, true)
                 dpt:add(model, gpus) -- now use our impl instead; nn.DataParallelTable(1)
                 dpt:threads(function()
-                                 require 'nngraph'
-                                 require 'MaskRNN'
-                                 require 'ReverseMaskRNN'
                                  require 'rnn'
                                  require 'cudnn'
+                                 require 'BNDecorator'
                              end)
                 dpt.gradInput = nil
                 model = dpt
@@ -37,6 +32,7 @@ local function clear(tensor)
      tensor:set()
     end
 end
+
 function saveDataParallel(filename, orgModel)
     local model = orgModel:clone()
     local model_type = torch.type(model)

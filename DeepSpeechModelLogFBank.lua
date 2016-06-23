@@ -25,12 +25,20 @@ end
 
 
 -- Wraps rnn module into bi-directional.
-local function BRNN(feat, seqLengths, rnnModule, rnnHiddenSize)
-    local fwdLstm = nn.MaskRNN(rnnModule:clone())({ feat, seqLengths })
-    local bwdLstm = nn.ReverseMaskRNN(rnnModule:clone())({ feat, seqLengths })
-    local rnn = nn.Sequential():add(nn.CAddTable())
+local function BLSTM(nIn, nHidden, GRU, is_cudnn)
+    local rnn = nn:Sequential()
+    if is_cudnn then
+        require 'cudnn'
+        rnn:add(cudnn.BLSTM(nIn, nHidden, 1))
+    else
+        require 'rnn'
+        local fwdLstm = nn.SeqLSTM(nIn, nHidden)
+        local bwdLstm = nn.SeqLSTM(nIn, nHidden)
+        local ct = nn.ConcatTable():add(fwdLstm):add(bwdLstm)
+        rnn:add(ct):add(nn.JoinTable(3))
+    end
     rnn:add(nn.BatchNormalization(rnnHiddenSize, 1e-3))
-    return rnn({ fwdLstm, bwdLstm })
+    return rnn
 end
 
 
@@ -73,7 +81,7 @@ local function deepSpeech(nGPU, isCUDNN, height, dict_size)
     feature:add(nn.SpatialBatchNormalization(32, 1e-3))
     feature:add(nn.ReLU(true))
     -- TODO the DS2 architecture does not include this layer, but mem overhead increases.
-    --feature:add(nn.SpatialMaxPooling(2, 2, 2, 2)) 
+    --feature:add(nn.SpatialMaxPooling(2, 2, 2, 2))
 
     local tmp = torch.rand(1, 1, height, get_min_width()*2) --init something
     local rnnInputsize = 32 * feature:forward(tmp):size(3) -- outputPlanes X outputHeight

@@ -82,10 +82,10 @@ function Network:init(networkParams)
             self.isCUDNN)
     else
         assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight, 
+        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight,
             networkParams.dictSize)
     end
-    assert((networkParams.saveModel or networkParams.loadModel) and 
+    assert((networkParams.saveModel or networkParams.loadModel) and
         networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     -- setting online loading
@@ -94,15 +94,15 @@ function Network:init(networkParams)
                                     require 'Loader';require 'Mapper'
                                 end,
                                 function()
-                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, 
-                                        networkParams.batchSize, networkParams.feature, 
+                                    trainLoader = Loader(networkParams.trainingSetLMDBPath,
+                                        networkParams.batchSize, networkParams.feature,
                                         networkParams.dataHeight, networkParams.modelName)
                                     trainLoader:prep_sorted_inds()
                                 end)
     self.pool:synchronize() -- needed?
 
-    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper, 
-        networkParams.validationBatchSize, networkParams.validationIterations, 
+    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
+        networkParams.validationBatchSize, networkParams.validationIterations,
         self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
         networkParams.modelName)
 
@@ -182,19 +182,6 @@ function Network:trainNetwork(sgd_params)
                 sizesBuf = size
             end)
 
-
-        -- TODO debug
---        local f = assert(io.open('debug.log', 'a'),'!!')
---        print('============ batch_info ================')
---        local N = specBuf:size(1)
---        for i=1,N do
---            print(specBuf[i][1]:size())
---            print(labelBuf[i])
---            print(#labelBuf[i])
---            print(sizesBuf[i])
---        end
---        f:close()
-
         --------------------- fwd and bwd ---------------------
         sizes = self.calSizeOfSequences(sizes)
         if self.nGPU > 0 then
@@ -203,13 +190,13 @@ function Network:trainNetwork(sgd_params)
         end
         local loss
         if criterion then
-            local output = self.model:forward({ inputs, sizes })
+            local output = self.model:forward(inputs)
             loss = criterion:forward(output, targets, sizes)
             local gradOutput = criterion:backward(output, targets)
             self.model:zeroGradParameters()
             self.model:backward(inputs, gradOutput)
         else
-            self.model:forward({ inputs, sizes })
+            self.model:forward(inputs)
             self.model:zeroGradParameters()
             loss = self.model:backward(inputs, targets)
         end
