@@ -13,38 +13,6 @@ local suffix = '_' .. os.date('%Y%m%d_%H%M%S')
 local threads = require 'threads'
 local Network = {}
 
-local function replace(self, callback)
-  local out = callback(self)
-  if self.modules then
-    for i, module in ipairs(self.modules) do
-      self.modules[i] = replace(module, callback)
-    end
-  end
-  return out
-end
-
-local function convertBN(net, dst)
-    return replace(net, function(x)
-        local y = 0
-        local src = dst == nn and cudnn or nn
-        local src_prefix = src == nn and 'nn.' or 'cudnn.'
-        local dst_prefix = dst == nn and 'nn.' or 'cudnn.'
-
-        local function convert(v)
-            local y = {}
-            torch.setmetatable(y, dst_prefix..v)
-            for k,u in pairs(x) do y[k] = u end
-            if src == cudnn and x.clearDesc then x.clearDesc(y) end
-            return y
-        end
-        if torch.typename(x) == src_prefix..'BatchNormalization' then
-            y = convert('BatchNormalization')
-        end
-        return y == 0 and x or y
-    end)
-end
-
-
 function Network:init(networkParams)
 
     self.fileName = networkParams.fileName -- The file name to save/load the network from.
@@ -82,10 +50,10 @@ function Network:init(networkParams)
             self.isCUDNN)
     else
         assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight, 
+        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight,
             networkParams.dictSize)
     end
-    assert((networkParams.saveModel or networkParams.loadModel) and 
+    assert((networkParams.saveModel or networkParams.loadModel) and
         networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     -- setting online loading
@@ -94,15 +62,15 @@ function Network:init(networkParams)
                                     require 'Loader';require 'Mapper'
                                 end,
                                 function()
-                                    trainLoader = Loader(networkParams.trainingSetLMDBPath, 
-                                        networkParams.batchSize, networkParams.feature, 
+                                    trainLoader = Loader(networkParams.trainingSetLMDBPath,
+                                        networkParams.batchSize, networkParams.feature,
                                         networkParams.dataHeight, networkParams.modelName)
                                     trainLoader:prep_sorted_inds()
                                 end)
     self.pool:synchronize() -- needed?
 
-    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper, 
-        networkParams.validationBatchSize, networkParams.validationIterations, 
+    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
+        networkParams.validationBatchSize, networkParams.validationIterations,
         self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
         networkParams.modelName)
 
@@ -118,16 +86,62 @@ function Network:prepSpeechModel(modelName, dataHeight, dict_size)
     self.calSizeOfSequences = model[2]
 end
 
+local function replace(self, callback)
+  local out = callback(self)
+  if self.modules then
+    for i, module in ipairs(self.modules) do
+      self.modules[i] = replace(module, callback)
+    end
+  end
+  return out
+end
+
+local function convertBN(net, dst)
+    return replace(net, function(x)
+        local y = 0
+        local src = dst == nn and cudnn or nn
+        local src_prefix = src == nn and 'nn.' or 'cudnn.'
+        local dst_prefix = dst == nn and 'nn.' or 'cudnn.'
+        -- print (torch.typename(x), src_prefix..'BatchNormalization')
+
+        local function convert(v)
+            local y = {}
+            torch.setmetatable(y, dst_prefix..v)
+            for k,u in pairs(x) do y[k] = u end
+            if src == cudnn and x.clearDesc then x.clearDesc(y) end
+            -- print (v,' ',y)
+            return y
+        end
+        if torch.typename(x) == src_prefix..'BatchNormalization' then
+            -- print (x)
+            y = convert('BatchNormalization')
+        end
+        return y == 0 and x or y
+    end)
+end
 
 function Network:testNetwork(currentIteration)
     self.model:evaluate()
+    require 'BNDecorator'
     if self.isCUDNN then
-        self.model = convertBN(self.model, nn)
+        if self.nGPU > 1 then
+            self.model.impl:exec(function(m, i)
+                convertBN(m, nn)
+            end)
+        else
+            self.model = convertBN(self.model, nn)
+        end
     end
     local wer = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
     self.model:zeroGradParameters()
     if self.isCUDNN then
-        self.model = convertBN(self.model, cudnn)
+        if self.nGPU > 1 then
+            self.model.impl:exec(function(m, i)
+                convertBN(m, cudnn)
+            end)
+        else
+            self.model = convertBN(self.model, cudnn)
+        end
     end
     self.model:training()
     return wer
@@ -182,19 +196,6 @@ function Network:trainNetwork(sgd_params)
                 sizesBuf = size
             end)
 
-
-        -- TODO debug
---        local f = assert(io.open('debug.log', 'a'),'!!')
---        print('============ batch_info ================')
---        local N = specBuf:size(1)
---        for i=1,N do
---            print(specBuf[i][1]:size())
---            print(labelBuf[i])
---            print(#labelBuf[i])
---            print(sizesBuf[i])
---        end
---        f:close()
-
         --------------------- fwd and bwd ---------------------
         sizes = self.calSizeOfSequences(sizes)
         if self.nGPU > 0 then
@@ -203,15 +204,15 @@ function Network:trainNetwork(sgd_params)
         end
         local loss
         if criterion then
-            local output = self.model:forward({ inputs, sizes })
+            local output = self.model:forward(inputs)
             loss = criterion:forward(output, targets, sizes)
             local gradOutput = criterion:backward(output, targets)
             self.model:zeroGradParameters()
             self.model:backward(inputs, gradOutput)
         else
-            self.model:forward({ inputs, sizes })
+            self.model:forward(inputs)
             self.model:zeroGradParameters()
-            loss = self.model:backward(inputs, targets)
+            loss = self.model:backward(inputs, targets, sizes)
         end
         gradParameters:div(inputs:size(1))
 

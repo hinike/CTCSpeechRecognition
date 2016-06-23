@@ -10,14 +10,14 @@ cutorch.manualSeedAll(seed)
 
 local networkParams = {
     loadModel = false,
-    saveModel = true, 
+    saveModel = true,
     backend = 'cudnn',
-    nGPU = 1, -- Number of GPUs, set -1 to use CPU
-    
+    nGPU = 2, -- Number of GPUs, set -1 to use CPU
+
     -- these 5 usually need to change together
     modelName = 'DeepSpeechModelSpect',
-    trainingSetLMDBPath = './prepare_an4_spect/train/',-- online loading path data.
-    validationSetLMDBPath = './prepare_an4_spect/test/',
+    trainingSetLMDBPath = './prepare_an4/train/',-- online loading path data.
+    validationSetLMDBPath = './prepare_an4/test/',
     feature = 'spect', -- can be spect or logfbank
     dataHeight = 129, -- if using logfbank, this means nfilts
 
@@ -27,7 +27,6 @@ local networkParams = {
 --    feature = 'logfbank', -- can be spect or logfbank
 --    dataHeight = 26, -- if using logfbank, this means nfilts
 
-   
     logsTrainPath = './logs/TrainingLoss/',
     logsValidationPath = './logs/ValidationScores/',
     modelTrainingPath = './models/',
@@ -38,11 +37,11 @@ local networkParams = {
 
     trainIteration= 47*70,
     batchSize = 20,
-    validationBatchSize = 20,
-    validationIterations = 7,
+    validationBatchSize = 26,
+    validationIterations = 5,
     testGap = 47,
-    saveModelIterations = 47*20, -- iterations! Intead of Epoch
-    
+    saveModelIterations = 47*50, -- iterations! Intead of Epoch
+
 }
 --Parameters for the stochastic gradient descent (using the optim library).
 local sgdParams = {

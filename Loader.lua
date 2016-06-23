@@ -33,12 +33,12 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
             feature: is it spect or logfbank we are using
             dataHeight: typically 129 for spect; 26 for logfbank
     --]]
-    
+
     -- constants to indicate the loading style
     self.DEFAULT = 1
     self.SAMELEN = 2
     self.SORTED = 3
-    
+
     -- get model specified methods
     model_t = require(modelname)
     cal_size = model_t[2]
@@ -74,7 +74,7 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
     self.sorted_inds = {}
     self.len_num = 0 -- number of unique seqLengths
     self.min_width = get_min_width() --from DeepSpeech
-    
+
     -- assume the super folder is the lmdb root folder
     local lmdb_path = self._dir..'/../'
 
@@ -103,7 +103,7 @@ function Loader:prep_sorted_inds()
     --[[
         prep a table for sorted inds, can detect previously saved table in lmdb folder
     --]]
-    
+
 
     print('preparing sorted indices..')
     local indicesFilePath = self._dir .. '/' .. 'sorted_inds_' .. self.min_width
@@ -144,7 +144,6 @@ function Loader:prep_sorted_inds()
             if i % 100 == 0 then xlua.progress(i, self.lmdb_size) end
         end
     end
-    
 
     print('original size: '..self.lmdb_size..' valid data: '..true_size)
     self.lmdb_size = true_size -- set size to true size
@@ -219,10 +218,10 @@ function Loader:convert_tensor(btensor)
     --[[
         convert a 1d byte tensor to 2d float tensor.
     --]]
-    
-    local num = btensor:size(1) / 4 -- assume real data is float 
+
+    local num = btensor:size(1) / 4 -- assume real data is float
     local s = torch.FloatStorage(num, tonumber(torch.data(btensor, true)))
-    
+
     assert(num % self.dataHeight == 0, 'something wrong with the tensor dims')
 
     return torch.FloatTensor(s, 1, torch.LongStorage{self.dataHeight, num / self.dataHeight})
@@ -272,7 +271,7 @@ function Loader:nxt_batch(mode, flag)
     for _, ind in next, inds, nil do
         local tensor
         if self.is_spect then
-            tensor = txn_spect:get(ind)            
+            tensor = txn_spect:get(ind)
         else
             tensor = self:convert_tensor(txn_spect:get(ind, true))
         end
@@ -324,7 +323,7 @@ function Loader:nxt_default_batch(flag)
     while batch_cnt < self.batch_size do
         local tensor
         if self.is_spect then
-            tensor = txn_spect:get(self.cnt) 
+            tensor = txn_spect:get(self.cnt)
         else
             tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
         end

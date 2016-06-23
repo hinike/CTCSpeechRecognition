@@ -88,7 +88,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
             inputs = inputs:cuda()
             sizes = sizes:cuda()
         end
-        local predictions = model:forward({ inputs, sizes })
+        local predictions = model:forward(inputs)
         if type(predictions) == 'table' then
             local temp = self:predicTrans(predictions[1], #predictions)
             for k = 2, #predictions do
