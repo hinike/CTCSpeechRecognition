@@ -17,6 +17,8 @@ function makeDataParallel(model, nGPU, is_cudnn)
                 dpt:threads(function()
                                  require 'rnn'
                                  require 'cudnn'
+                                 require 'nnx'
+                                 require 'warp_ctc'
                                  require 'BNDecorator'
                              end)
                 dpt.gradInput = nil
