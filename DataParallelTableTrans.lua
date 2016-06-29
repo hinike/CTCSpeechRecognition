@@ -141,7 +141,8 @@ function DataParallelTableTrans:__backward_inner(method, input, target, size, sc
             return torch.CudaTensor()
         else
             local targets_slice = slice(target, 1+(i-1)*batch_size, i*batch_size)
-            loss[i] = ctc:forward(outputGpu[i], targets_slice, sizeGpu[i])
+            ctc:forward(outputGpu[i], targets_slice, sizeGpu[i])
+            loss[i] = ctc.output
             local gradOutput = ctc:backward(outputGpu[i], targets_slice)
             return m[method](m, inputGpu[i], gradOutput, scale)
         end
@@ -166,5 +167,5 @@ function DataParallelTableTrans:__backward_inner(method, input, target, size, sc
         self.needsSync = true
     end
     cutorch.setDevice(prevGpuid)
-    return loss:mean()
+    return loss:sum()
 end

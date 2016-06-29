@@ -12,12 +12,12 @@ local networkParams = {
     loadModel = false,
     saveModel = true,
     backend = 'cudnn',
-    nGPU = 2, -- Number of GPUs, set -1 to use CPU
+    nGPU = 4, -- Number of GPUs, set -1 to use CPU
 
     -- these 5 usually need to change together
     modelName = 'DeepSpeechModelSpect',
-    trainingSetLMDBPath = './prepare_an4/train/',-- online loading path data.
-    validationSetLMDBPath = './prepare_an4/test/',
+    trainingSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/train',-- online loading path data.
+    validationSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/test/',
     feature = 'spect', -- can be spect or logfbank
     dataHeight = 129, -- if using logfbank, this means nfilts
 
@@ -33,19 +33,19 @@ local networkParams = {
     fileName = arg[1] or 'CTCNetwork.t7',
 
     dictionaryPath = './dictionary',
-    dictSize = 28,
+    dictSize = 29,
 
-    trainIteration= 47*70,
-    batchSize = 20,
-    validationBatchSize = 26,
-    validationIterations = 5,
-    testGap = 47,
-    saveModelIterations = 47*50, -- iterations! Intead of Epoch
+    trainIteration= 200*700,
+    batchSize = 200,
+    validationBatchSize = 24,
+    validationIterations = 100,
+    testGap = 200,
+    saveModelIterations = 200*100, -- iterations! Intead of Epoch
 
 }
 --Parameters for the stochastic gradient descent (using the optim library).
 local sgdParams = {
-    learningRate = 1e-3,
+    learningRate = 1e-1,
     learningRateDecay = 1e-9,
     weightDecay = 0,
     momentum = 0.9,

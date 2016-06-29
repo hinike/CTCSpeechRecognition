@@ -267,6 +267,7 @@ function Loader:nxt_batch(mode, flag)
 
     local sizes_array = torch.Tensor(#inds)
     local cnt = 1
+    local labelcnt = 0
     -- reads out a batch and store in lists
     for _, ind in next, inds, nil do
         local tensor
@@ -286,6 +287,7 @@ function Loader:nxt_batch(mode, flag)
 
         tensor_list:insert(tensor)
         table.insert(label_list, label)
+        labelcnt = labelcnt + #label
         if flag then table.insert(trans_list, torch.deserialize(txn_trans:get(ind))) end
     end
 
@@ -301,7 +303,8 @@ function Loader:nxt_batch(mode, flag)
 
     if flag then return tensor_array, label_list, sizes_array, trans_list end
 
-    return tensor_array, label_list, sizes_array
+    print('plaplapla')
+    return tensor_array, label_list, sizes_array, labelcnt
 end
 
 function Loader:nxt_default_batch(flag)
@@ -320,6 +323,7 @@ function Loader:nxt_default_batch(flag)
 
     -- reads out a batch and store in lists
     local batch_cnt = 0
+    local label_cnt = 0
     while batch_cnt < self.batch_size do
         local tensor
         if self.is_spect then
@@ -342,6 +346,7 @@ function Loader:nxt_default_batch(flag)
 
             tensor_list:insert(tensor)
             table.insert(label_list, label)
+            label_cnt = label_cnt + #label
             if flag then table.insert(trans_list, torch.deserialize(txn_trans:get(self.cnt))) end
         end
 
@@ -363,5 +368,5 @@ function Loader:nxt_default_batch(flag)
     for k,v in ipairs(sizes_list) do sizes_array[k] = v end
 
     if flag then return tensor_array, label_list, sizes_array, trans_list end
-    return tensor_array, label_list, sizes_array
+    return tensor_array, label_list, sizes_array, label_cnt
 end

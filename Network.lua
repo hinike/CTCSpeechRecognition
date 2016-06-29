@@ -57,16 +57,16 @@ function Network:init(networkParams)
         networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     -- setting online loading
-    self.pool = threads.Threads(1,
-                                function()
-                                    require 'Loader';require 'Mapper'
-                                end,
-                                function()
-                                    trainLoader = Loader(networkParams.trainingSetLMDBPath,
-                                        networkParams.batchSize, networkParams.feature,
-                                        networkParams.dataHeight, networkParams.modelName)
-                                    trainLoader:prep_sorted_inds()
-                                end)
+    self.pool = threads.Threads(8,
+        function()
+            require 'Loader';require 'Mapper'
+        end,
+        function()
+            trainLoader = Loader(networkParams.trainingSetLMDBPath,
+                networkParams.batchSize, networkParams.feature,
+                networkParams.dataHeight, networkParams.modelName)
+          --trainLoader:prep_sorted_inds()
+        end)
     self.pool:synchronize() -- needed?
 
     self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
@@ -170,31 +170,38 @@ function Network:trainNetwork(sgd_params)
     end
 
     -- def loading buf
-    local specBuf, labelBuf, sizesBuf
+    local specBuf, labelBuf, sizesBuf, cntBuf
 
     -- load first batch
     self.pool:addjob(function()
-        return trainLoader:nxt_batch(trainLoader.SORTED, false)
+        return trainLoader:nxt_batch(trainLoader.DEFAULT, false)
     end,
-        function(spect, label, sizes)
+        function(spect, label, sizes, cnt)
             specBuf = spect
             labelBuf = label
             sizesBuf = sizes
+            cntBuf = cnt
         end)
 
+    local timer = torch.Timer()
+    local alltimer = torch.Timer()
     -- define the feval
     local function feval(x_new)
         --------------------- data load ------------------------
+        local start = timer:time().real
+        local allstart = timer:time().real
         self.pool:synchronize() -- wait previous loading
-        local inputs, sizes, targets = specBuf, sizesBuf, labelBuf -- move buf to training data
+        local inputs, sizes, targets, labelcnt = specBuf, sizesBuf, labelBuf, cntBuf -- move buf to training data
         self.pool:addjob(function()
-            return trainLoader:nxt_batch(trainLoader.SORTED, false)
+            return trainLoader:nxt_batch(trainLoader.DEFAULT, false)
         end,
-            function(spect, label, size)
+            function(spect, label, sizes, cnt)
                 specBuf = spect
                 labelBuf = label
-                sizesBuf = size
+                sizesBuf = sizes
+                cntBuf = cnt
             end)
+        local datatime = timer:time().real - start
 
         --------------------- fwd and bwd ---------------------
         sizes = self.calSizeOfSequences(sizes)
@@ -205,7 +212,8 @@ function Network:trainNetwork(sgd_params)
         local loss
         if criterion then
             local output = self.model:forward(inputs)
-            loss = criterion:forward(output, targets, sizes)
+            criterion:forward(output, targets, sizes)
+            loss = criterion.output
             local gradOutput = criterion:backward(output, targets)
             self.model:zeroGradParameters()
             self.model:backward(inputs, gradOutput)
@@ -214,8 +222,13 @@ function Network:trainNetwork(sgd_params)
             self.model:zeroGradParameters()
             loss = self.model:backward(inputs, targets, sizes)
         end
-        gradParameters:div(inputs:size(1))
+        --gradParameters:div(inputs:size(1))
+        gradParameters:div(labelcnt)
+        loss = loss / labelcnt
+        gradParameters:clamp(-0.1,0.1)
 
+        local alltime = alltimer:time().real - allstart
+        print(('Time %.3f data %.3f . Ratio %.3f'):format(alltime, datatime, datatime/alltime))
         return loss, gradParameters
     end
 
@@ -226,13 +239,13 @@ function Network:trainNetwork(sgd_params)
     for j = 1,self.trainIteration do
 
         local _, fs = optim.sgd(feval, x, sgd_params)
-        averageLoss = averageLoss + fs[1]
+        averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
+        print('iter: '.. j..' error: ' .. fs[1])
 
         local p = j % self.testGap; if p == 0 then p = self.testGap end
-        xlua.progress(p, self.testGap)
+        --xlua.progress(p, self.testGap)
 
         if j % self.testGap == 0 then
-            averageLoss = averageLoss / self.testGap -- Calculate the average loss at this epoch.
             -- Update validation error rates
             local wer = self:testNetwork(j)
 
@@ -242,7 +255,6 @@ function Network:trainNetwork(sgd_params)
             table.insert(validationHistory, 100 * wer)
             self.logger:add { averageLoss, 100 * wer }
 
-            averageLoss = 0
         end
 
         -- periodically save the model
