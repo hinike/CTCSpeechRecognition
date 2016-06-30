@@ -16,8 +16,8 @@ local networkParams = {
 
     -- these 5 usually need to change together
     modelName = 'DeepSpeechModelSpect',
-    trainingSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/train',-- online loading path data.
-    validationSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/test/',
+    trainingSetLMDBPath = '/data1/zhirongw/LibriSpeech/train',-- online loading path data.
+    validationSetLMDBPath = '/data1/zhirongw/LibriSpeech/test/',
     feature = 'spect', -- can be spect or logfbank
     dataHeight = 129, -- if using logfbank, this means nfilts
 
@@ -35,12 +35,11 @@ local networkParams = {
     dictionaryPath = './dictionary',
     dictSize = 29,
 
-    trainIteration= 200*700,
+    epochs = 70,
     batchSize = 200,
     validationBatchSize = 24,
     validationIterations = 100,
-    testGap = 200,
-    saveModelIterations = 200*100, -- iterations! Intead of Epoch
+    saveModelIterations = 10, -- Epochs
 
 }
 --Parameters for the stochastic gradient descent (using the optim library).

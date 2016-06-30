@@ -4,6 +4,7 @@ require 'lmdb'
 require 'xlua'
 require 'paths'
 tds = require 'tds'
+threads = require 'threads'
 
 -- get model specified methods into this module
 local model_t
@@ -39,64 +40,72 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
     self.SAMELEN = 2
     self.SORTED = 3
 
-    -- get model specified methods
-    model_t = require(modelname)
-    cal_size = model_t[2]
-    get_min_width = model_t[3]
-
-    self.db_spect = lmdb.env { Path = _dir .. '/spect', Name = 'spect' }
-    self.db_label = lmdb.env { Path = _dir .. '/label', Name = 'label' }
-    self.db_trans = lmdb.env { Path = _dir .. '/trans', Name = 'trans' }
-    self._dir = _dir
-
+    self.modelname = modelname
     self.batch_size = batch_size
     self.dataHeight = dataHeight
     self.is_spect = feature == 'spect'
     self.cnt = 1
 
-    -- get the size of lmdb
-    self.db_spect:open()
-    self.db_label:open()
-    self.db_trans:open()
-    local l1 = self.db_spect:stat()['entries']
-    local l2 = self.db_label:stat()['entries']
-    local l3 = self.db_trans:stat()['entries']
-
-    assert(l1 == l2 and l2 == l3, 'data sizes in each lmdb must agree')
-
-    self.lmdb_size = l1
-
-    self.db_spect:close()
-    self.db_label:close()
-    self.db_trans:close()
-
-    assert(self.lmdb_size > self.batch_size, 'batch_size larger than lmdb_size')
     self.sorted_inds = {}
     self.len_num = 0 -- number of unique seqLengths
-    self.min_width = get_min_width() --from DeepSpeech
+    --self.min_width = get_min_width() --from DeepSpeech
 
-    -- assume the super folder is the lmdb root folder
-    local lmdb_path = self._dir..'/../'
-
-    print('preparing mean and std of the dataset..')
-    if paths.filep(lmdb_path..'mean_std') then
-        print('found previously saved stats..')
-        local tensor = torch.load(lmdb_path..'mean_std')
-        self.mean = tensor[1]
-        self.std = tensor[2]
-        print(string.format('mean is %.3f; std is %.3f\n', self.mean, self.std))
-    else
-        print('did not find previously saved stats, generating..')
-        if feature == 'spect' then
-            util.get_mean_std(lmdb_path)
+    local function preprocess()
+        -- assume the super folder is the lmdb root folder
+        local lmdb_path = _dir..'/../'
+        local stats = {} -- mean/std
+        --print('preparing mean and std of the dataset..')
+        if paths.filep(lmdb_path..'mean_std') then
+            --print('found previously saved stats..')
+            stats = torch.load(lmdb_path..'mean_std')
         else
-            util.get_mean_std(lmdb_path, dataHeight)
+            print('did not find previously saved stats, generating..')
+            if feature == 'spect' then
+                util.get_mean_std(lmdb_path)
+            else
+                util.get_mean_std(lmdb_path, dataHeight)
+            end
+            stats = torch.load(lmdb_path..'mean_std')
         end
-        local tensor = torch.load(lmdb_path..'mean_std')
-        self.mean = tensor[1]
-        self.std = tensor[2]
+        return stats
     end
 
+    local function init() require('Mapper') require('lmdb') tds = require 'tds' end
+
+    local function main(idx)
+        torch.manualSeed(idx)
+        torch.setnumthreads(1)
+        -- get model specified methods
+        model_t = require(modelname)
+        _G.cal_size = model_t[2]
+        _G.get_min_width = model_t[3]
+
+        _G.db_spect = lmdb.env { Path = _dir .. '/spect', Name = 'spect' }
+        _G.db_label = lmdb.env { Path = _dir .. '/label', Name = 'label' }
+        _G.db_trans = lmdb.env { Path = _dir .. '/trans', Name = 'trans' }
+
+        -- get the size of lmdb
+        _G.db_spect:open()
+        _G.db_label:open()
+        _G.db_trans:open()
+        local l1 = _G.db_spect:stat()['entries']
+        local l2 = _G.db_label:stat()['entries']
+        local l3 = _G.db_trans:stat()['entries']
+
+        assert(l1 == l2 and l2 == l3, 'data sizes in each lmdb must agree')
+
+        _G.db_spect:close()
+        _G.db_label:close()
+        _G.db_trans:close()
+
+        _G.stats = preprocess()
+        return l1
+    end
+    
+    local pool, lmdb_size = threads.Threads(1, init, main)
+
+    self.pool = pool
+    self.lmdb_size = lmdb_size[1][1]
 end
 
 function Loader:prep_sorted_inds()
@@ -120,8 +129,17 @@ function Loader:prep_sorted_inds()
     -- if not make a new one
     print('did not find previously saved indices, generating.')
 
+    model_t = require(modelname)
+    cal_size = model_t[2]
+    get_min_width = model_t[3]
+
+    self.db_spect = lmdb.env { Path = _dir .. '/spect', Name = 'spect' }
+    self.db_label = lmdb.env { Path = _dir .. '/label', Name = 'label' }
+    self.db_trans = lmdb.env { Path = _dir .. '/trans', Name = 'trans' }
+
     self.db_spect:open(); local txn = self.db_spect:txn(true)
     self.db_label:open(); local txn_label = self.db_label:txn(true)
+    self.lmdb_size = self.db_spect:stat()['entries']
 
     local lengths = {}
     -- those shorter than min_width are ignored
@@ -160,9 +178,9 @@ end
 
 function Loader:nxt_sorted_inds()
     local meta_inds = self:nxt_inds()
-    local inds = {}
-    for _, v in ipairs(meta_inds) do
-        table.insert(inds, self.sorted_inds[v][1])
+    local inds = meta_inds:clone()
+    for i = 1, size(inds,1) do
+        inds[i]  = self.sorted_inds[meta_inds[i]][1]
     end
     return inds
 end
@@ -174,7 +192,6 @@ function Loader:nxt_same_len_inds()
     --]]
 
     local _len = self.sorted_inds[self.cnt][2]
-    local inds = {}
     while (self.cnt <= self.lmdb_size and self.sorted_inds[self.cnt][2] == _len) do
         -- NOTE: true index store in table, instead of cnt
         table.insert(inds, self.sorted_inds[self.cnt][1])
@@ -191,26 +208,13 @@ function Loader:nxt_inds()
         return indices of the next batch
     --]]
 
-    local inds = {}
-    if self.lmdb_size > self.cnt + self.batch_size - 1 then
-        for i = 0, self.batch_size - 1 do
-            table.insert(inds, self.cnt + i)
-        end
-
-        self.cnt = self.cnt + self.batch_size
-        return inds
+    local inds = torch.linspace(self.cnt, self.cnt+self.batch_size-1, self.batch_size)
+    self.cnt = self.cnt + self.batch_size
+    local overflow = inds[-1] - self.lmdb_size
+    if overflow > 0 then
+        inds:narrow(1, self.batch_size-overflow+1, overflow):copy(torch.linspace(1, overflow, overflow))
+        self.cnt = overflow
     end
-
-    -- case where cnt+size >= total size
-    for i = self.cnt, self.lmdb_size do
-        table.insert(inds, i)
-    end
-
-    self.cnt = self.batch_size - (self.lmdb_size - self.cnt)
-    for i = 1, self.cnt - 1 do -- overflow inds
-    table.insert(inds, i)
-    end
-
     return inds
 end
 
@@ -228,7 +232,7 @@ function Loader:convert_tensor(btensor)
 
 end
 
-function Loader:nxt_batch(mode, flag)
+function Loader:nxt_batch(mode)
     --[[
         return a batch by loading from lmdb just-in-time
 
@@ -239,134 +243,94 @@ function Loader:nxt_batch(mode, flag)
         TODO we allocate 2 * batch_size space
     --]]
 
-    ---------------------------- get inds -------------------------------------
-    local inds
-    if mode == self.DEFAULT then
-        return self:nxt_default_batch(flag)
-    else
-        assert(#self.sorted_inds > 0, 'call prep_sorted_inds before nxt_batch')
-        if mode == self.SAMELEN then
-            inds = self:nxt_same_len_inds()
-        elseif mode == self.SORTED then
-            inds = self:nxt_sorted_inds()
+    local pool = self.pool
+
+    local idx, sample = 1, nil
+    local function enqueue()
+        while idx <= self.lmdb_size and pool:acceptsjob() do
+            -- gen index for this iter batch
+            local indices
+            if mode == self.SAMELEN then
+                assert(#self.sorted_inds > 0, 'call prep_sorted_inds before nxt_batch')
+                indices = self:nxt_same_len_inds()
+            elseif mode == self.SORTED then
+                assert(#self.sorted_inds > 0, 'call prep_sorted_inds before nxt_batch')
+                indices = self:nxt_sorted_inds()
+            else -- default
+                indices = self:nxt_inds()
+            end
+            pool:addjob(
+                function(indices)
+                    local tensor_list = tds.Vec()
+                    local label_list = {}
+                    local sizes_array = torch.Tensor(#indices)
+                    local labelcnt = 0
+
+                    local max_w = 0
+                    local h = 0
+                  
+                    _G.db_spect:open(); local txn_spect = _G.db_spect:txn(true) -- readonly
+                    _G.db_label:open(); local txn_label = _G.db_label:txn(true)
+
+                    is_spect = true
+                    for i, idx in ipairs(indices:totable()) do
+                       local tensor
+                       if is_spect then
+                           tensor = txn_spect:get(idx)
+                       else
+                    --       tensor = self:convert_tensor(txn_spect:get(idx, true))
+                       end
+
+                       local label = torch.deserialize(txn_label:get(idx))
+
+                       h = tensor:size(1)
+                       sizes_array[i] = tensor:size(2) 
+                       if max_w < tensor:size(2) then max_w = tensor:size(2) end -- find the max len in this batch
+
+                       tensor_list:insert(tensor)
+                       table.insert(label_list, label)
+                       labelcnt = labelcnt + #label
+                   end
+                   -- store tensors into a fixed len tensor_array TODO should find a better way to do this
+                   local tensor_array = torch.Tensor(indices:size(1), 1, h, max_w):zero()
+                   for i, tensor in ipairs(tensor_list) do
+                       tensor_array[i][1]:narrow(2, 1, tensor:size(2)):copy(tensor)
+                   end
+                   tensor_array:csub(_G.stats[1])
+                   tensor_array:div(_G.stats[2])
+
+                   txn_spect:abort(); _G.db_spect:close()
+                   txn_label:abort(); _G.db_label:close()
+                   return {
+                       inputs = tensor_array,
+                       label = label_list,
+                       sizes = sizes_array,
+                       labelcnt = labelcnt,
+                   }
+                end,
+                function(_sample_)
+                    sample = _sample_
+                end,
+                indices)
+            idx = idx + indices:size(1)
         end
     end
 
-    --------------------------- loading --------------------------------------
-    local tensor_list = tds.Vec()
-    local label_list = {}
-    local max_w = 0
-    local h = 0
-
-    local trans_list = {}
-    local txn_trans
-
-    self.db_spect:open(); local txn_spect = self.db_spect:txn(true) -- readonly
-    self.db_label:open(); local txn_label = self.db_label:txn(true)
-    if flag then self.db_trans:open(); txn_trans = self.db_trans:txn(true) end
-
-    local sizes_array = torch.Tensor(#inds)
-    local cnt = 1
-    local labelcnt = 0
-    -- reads out a batch and store in lists
-    for _, ind in next, inds, nil do
-        local tensor
-        if self.is_spect then
-            tensor = txn_spect:get(ind)
-        else
-            tensor = self:convert_tensor(txn_spect:get(ind, true))
+    local n = 0
+    local function loop()
+        enqueue()
+        if not pool:hasjob() then
+            return nil
         end
-        tensor:csub(self.mean)
-        tensor:div(self.std)
-
-        local label = torch.deserialize(txn_label:get(ind))
-
-        h = tensor:size(1)
-        sizes_array[cnt] = tensor:size(2); cnt = cnt + 1 -- record true length
-        if max_w < tensor:size(2) then max_w = tensor:size(2) end -- find the max len in this batch
-
-        tensor_list:insert(tensor)
-        table.insert(label_list, label)
-        labelcnt = labelcnt + #label
-        if flag then table.insert(trans_list, torch.deserialize(txn_trans:get(ind))) end
+        pool:dojob()
+        if pool:haserror() then
+            pool:synchronize()
+        end
+        enqueue()
+        n = n + 1
+        return n, sample 
     end
 
-    -- store tensors into a fixed len tensor_array TODO should find a better way to do this
-    local tensor_array = torch.Tensor(#inds, 1, h, max_w):zero()
-    for ind, tensor in ipairs(tensor_list) do
-        tensor_array[ind][1]:narrow(2, 1, tensor:size(2)):copy(tensor)
-    end
-
-    txn_spect:abort(); self.db_spect:close()
-    txn_label:abort(); self.db_label:close()
-    if flag then txn_trans:abort(); self.db_trans:close() end
-
-    if flag then return tensor_array, label_list, sizes_array, trans_list end
-
-    print('plaplapla')
-    return tensor_array, label_list, sizes_array, labelcnt
+    return loop
 end
 
-function Loader:nxt_default_batch(flag)
-
-    local tensor_list = tds.Vec()
-    local label_list = {}
-    local max_w = 0
-    local h = 0
-    local trans_list = {}
-    local sizes_list = {}
-    local txn_trans
-
-    self.db_spect:open(); local txn_spect = self.db_spect:txn(true) -- readonly
-    self.db_label:open(); local txn_label = self.db_label:txn(true)
-    if flag then self.db_trans:open(); txn_trans = self.db_trans:txn(true) end
-
-    -- reads out a batch and store in lists
-    local batch_cnt = 0
-    local label_cnt = 0
-    while batch_cnt < self.batch_size do
-        local tensor
-        if self.is_spect then
-            tensor = txn_spect:get(self.cnt)
-        else
-            tensor = self:convert_tensor(txn_spect:get(self.cnt, true))
-        end
-        tensor:csub(self.mean)
-        tensor:div(self.std)
-
-        local label = torch.deserialize(txn_label:get(self.cnt))
-        local width = tensor:size(2)
-
-        if width >= self.min_width and cal_size(width) >= #label then
-            batch_cnt = batch_cnt + 1
-
-            h = tensor:size(1)
-            table.insert(sizes_list, width)
-            if max_w < width then max_w = width end -- find the max len in this batch
-
-            tensor_list:insert(tensor)
-            table.insert(label_list, label)
-            label_cnt = label_cnt + #label
-            if flag then table.insert(trans_list, torch.deserialize(txn_trans:get(self.cnt))) end
-        end
-
-        self.cnt = self.cnt + 1
-        if self.cnt > self.lmdb_size then self.cnt = self.cnt % self.lmdb_size end
-    end
-
-    -- store tensors into a fixed len tensor_array TODO should find a better way to do this
-    local tensor_array = torch.Tensor(batch_cnt, 1, h, max_w):zero()
-    for ind, tensor in ipairs(tensor_list) do
-        tensor_array[ind][1]:narrow(2, 1, tensor:size(2)):copy(tensor) --TODO wrong
-    end
-
-    txn_spect:abort(); self.db_spect:close()
-    txn_label:abort(); self.db_label:close()
-    if flag then txn_trans:abort(); self.db_trans:close() end
-
-    local sizes_array = torch.Tensor(#sizes_list)
-    for k,v in ipairs(sizes_list) do sizes_array[k] = v end
-
-    if flag then return tensor_array, label_list, sizes_array, trans_list end
-    return tensor_array, label_list, sizes_array, label_cnt
-end

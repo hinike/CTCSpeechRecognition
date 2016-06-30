@@ -16,19 +16,11 @@ function WEREvaluator:__init(_path, mapper, testBatchSize,
     self.nbOfTestIterations = nbOfTestIterations
     self.feature = feature
 
-    self.pool = threads.Threads(1,
-                                function()
-                                    require 'Mapper';require 'Loader'
-                                end,
-                                function()
-                                    testLoader = Loader(_path, testBatchSize, 
-                                        feature, dataHeight, modelname)
-                                end)
-    self.pool:synchronize() -- needed?
-
     self.mapper = mapper
     self.logsPath = logsPath
     self.suffix = '_' .. os.date('%Y%m%d_%H%M%S')
+
+    self.testLoader = Loader(_path, testBatchSize, feature, dataHeight, modelname)
 end
 
 function WEREvaluator:predicTrans(src, nGPU)
@@ -51,41 +43,27 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
     end
     local specBuf, labelBuf, sizesBuf
 
-    -- get first batch
-    self.pool:addjob(function()
-            return testLoader:nxt_batch(testLoader.DEFAULT, false)
-        end,
-        function(spect, label, sizes)
-            specBuf = spect
-            labelBuf = label
-            sizesBuf = sizes
-        end)
-
     if verbose then
-        local f = assert(io.open(self.logsPath .. 'WER_Test' .. self.suffix .. '.log', 'a'), "Could not create validation test logs, does the folder "
+        local f = assert(io.open(self.logsPath .. 'WER_Test' .. self.suffix .. '.log', 'a'),
+               "Could not create validation test logs, does the folder "
                 .. self.logsPath .. " exist?")
-        f:write('======================== BEGIN WER TEST currentIteration: ' .. currentIteration .. ' =========================\n')
+        f:write('======================== BEGIN WER TEST currentIteration: '
+                .. currentIteration .. ' =========================\n')
         f:close()
     end
 
     local werPredictions = {} -- stores the predictions to order for log.
-
+    local N = 0
     -- ======================= for every test iteration ==========================
-    for i = 1, self.nbOfTestIterations do
+    for n, sample in self.testLoader:nxt_batch() do
         -- get buf and fetch next one
-        self.pool:synchronize()
-        local inputs, sizes, targets = specBuf, sizesBuf, labelBuf -- move buf to training data
-        self.pool:addjob(function()
-            return testLoader:nxt_batch(testLoader.DEFAULT, false)
-        end,
-            function(spect, label, size)
-                specBuf = spect
-                labelBuf = label
-                sizesBuf = size
-            end)
-        sizes = calSizeOfSequences(sizes)
+        local inputs, sizes, targets, labelcnt
+
+        sizes = calSizeOfSequences(sample.sizes)
+        targets = sample.label
+        labelcnt = sample.labelcnt
         if gpu then
-            inputs = inputs:cuda()
+            inputs = sample.inputs:cuda()
             sizes = sizes:cuda()
         end
         local predictions = model:forward(inputs)
@@ -100,14 +78,17 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
         end
 
         -- =============== for every data point in this batch ==================
+        local batchWER = 0
         for j = 1, self.testBatchSize do
             local prediction_single = predictions[j]
             local predict_tokens = Evaluator.predict2tokens(prediction_single, self.mapper)
             local WER = Evaluator.sequenceErrorRate(targets[j], predict_tokens)
             cumWER = cumWER + WER
+            batchWER = batchWER + WER
             table.insert(werPredictions, { wer = WER * 100, target = self:tokens2text(targets[j]), prediction = self:tokens2text(predict_tokens) })
         end
-        xlua.progress(i, self.nbOfTestIterations)
+        print(('Testing | Iter: %d, WER: %2.2f%%'):format(n, batchWER/self.testBatchSize*100))
+        N = N + 1
     end
 
     local function comp(a, b) return a.wer < b.wer end
@@ -122,12 +103,11 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
             f:close()
         end
     end
-    local averageWER = cumWER / (self.nbOfTestIterations * self.testBatchSize)
+    local averageWER = cumWER / (N * self.testBatchSize)
     local f = assert(io.open(self.logsPath .. 'WER_Test' .. self.suffix .. '.log', 'a'))
     f:write(string.format("Average WER = %.2f%%", averageWER * 100))
     f:close()
 
-    self.pool:synchronize() -- end the last loading
     return averageWER
 end
 

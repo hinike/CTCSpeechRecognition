@@ -28,8 +28,7 @@ function Network:init(networkParams)
     self.logsTrainPath = networkParams.logsTrainPath or nil
     self.logsValidationPath = networkParams.logsValidationPath or nil
     self.modelTrainingPath = networkParams.modelTrainingPath or nil
-    self.trainIteration = networkParams.trainIteration
-    self.testGap = networkParams.testGap
+    self.trainEpochs = networkParams.epochs
 
     self.dataHeight = networkParams.dataHeight
     self.feature = networkParams.dataHeight
@@ -56,19 +55,6 @@ function Network:init(networkParams)
     assert((networkParams.saveModel or networkParams.loadModel) and
         networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
-    -- setting online loading
-    self.pool = threads.Threads(8,
-        function()
-            require 'Loader';require 'Mapper'
-        end,
-        function()
-            trainLoader = Loader(networkParams.trainingSetLMDBPath,
-                networkParams.batchSize, networkParams.feature,
-                networkParams.dataHeight, networkParams.modelName)
-          --trainLoader:prep_sorted_inds()
-        end)
-    self.pool:synchronize() -- needed?
-
     self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
         networkParams.validationBatchSize, networkParams.validationIterations,
         self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
@@ -77,6 +63,12 @@ function Network:init(networkParams)
     self.logger = optim.Logger(self.logsTrainPath .. 'train' .. suffix .. '.log')
     self.logger:setNames { 'loss', 'WER' }
     self.logger:style { '-', '-' }
+
+    self.trainLoader = Loader(networkParams.trainingSetLMDBPath,
+         networkParams.batchSize, networkParams.feature,
+         networkParams.dataHeight, networkParams.modelName)
+    self.trainLoader.lmdb_size = 132500
+    --self.trainLoader:prep_sorted_inds()
 end
 
 
@@ -120,7 +112,7 @@ local function convertBN(net, dst)
     end)
 end
 
-function Network:testNetwork(currentIteration)
+function Network:testNetwork()
     self.model:evaluate()
     require 'BNDecorator'
     if self.isCUDNN then
@@ -132,7 +124,7 @@ function Network:testNetwork(currentIteration)
             self.model = convertBN(self.model, nn)
         end
     end
-    local wer = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
+    local wer = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, false) -- details in log
     self.model:zeroGradParameters()
     if self.isCUDNN then
         if self.nGPU > 1 then
@@ -169,98 +161,71 @@ function Network:trainNetwork(sgd_params)
         end
     end
 
-    -- def loading buf
-    local specBuf, labelBuf, sizesBuf, cntBuf
-
-    -- load first batch
-    self.pool:addjob(function()
-        return trainLoader:nxt_batch(trainLoader.DEFAULT, false)
-    end,
-        function(spect, label, sizes, cnt)
-            specBuf = spect
-            labelBuf = label
-            sizesBuf = sizes
-            cntBuf = cnt
-        end)
-
-    local timer = torch.Timer()
-    local alltimer = torch.Timer()
     -- define the feval
+    local loss
     local function feval(x_new)
-        --------------------- data load ------------------------
-        local start = timer:time().real
-        local allstart = timer:time().real
-        self.pool:synchronize() -- wait previous loading
-        local inputs, sizes, targets, labelcnt = specBuf, sizesBuf, labelBuf, cntBuf -- move buf to training data
-        self.pool:addjob(function()
-            return trainLoader:nxt_batch(trainLoader.DEFAULT, false)
-        end,
-            function(spect, label, sizes, cnt)
-                specBuf = spect
-                labelBuf = label
-                sizesBuf = sizes
-                cntBuf = cnt
-            end)
-        local datatime = timer:time().real - start
-
-        --------------------- fwd and bwd ---------------------
-        sizes = self.calSizeOfSequences(sizes)
-        if self.nGPU > 0 then
-            inputs = inputs:cuda()
-            sizes = sizes:cuda()
-        end
-        local loss
-        if criterion then
-            local output = self.model:forward(inputs)
-            criterion:forward(output, targets, sizes)
-            loss = criterion.output
-            local gradOutput = criterion:backward(output, targets)
-            self.model:zeroGradParameters()
-            self.model:backward(inputs, gradOutput)
-        else
-            self.model:forward(inputs)
-            self.model:zeroGradParameters()
-            loss = self.model:backward(inputs, targets, sizes)
-        end
-        --gradParameters:div(inputs:size(1))
-        gradParameters:div(labelcnt)
-        loss = loss / labelcnt
-        gradParameters:clamp(-0.1,0.1)
-
-        local alltime = alltimer:time().real - allstart
-        print(('Time %.3f data %.3f . Ratio %.3f'):format(alltime, datatime, datatime/alltime))
         return loss, gradParameters
     end
 
+    local dataTimer = torch.Timer()
+    local timer = torch.Timer()
     -- training
     local startTime = os.time()
     local averageLoss = 0
 
-    for j = 1,self.trainIteration do
+    for i = 1, self.trainEpochs do
+        for n, sample in self.trainLoader:nxt_batch(self.trainLoader.DEFAULT) do
+            --------------------- data load ------------------------
+            local datatime = dataTimer:time().real
+            local inputs, sizes, targets, labelcnt
 
-        local _, fs = optim.sgd(feval, x, sgd_params)
-        averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
-        print('iter: '.. j..' error: ' .. fs[1])
+            sizes = self.calSizeOfSequences(sample.sizes)
+            targets = sample.label
+            labelcnt = sample.labelcnt
+            if self.nGPU > 0 then
+                inputs = sample.inputs:cuda()
+                sizes = sizes:cuda()
+            end
+            --------------------- fwd and bwd ---------------------
+            if criterion then
+                local output = self.model:forward(inputs)
+                criterion:forward(output, targets, sizes)
+                loss = criterion.output
+                local gradOutput = criterion:backward(output, targets)
+                self.model:zeroGradParameters()
+                self.model:backward(inputs, gradOutput)
+            else
+                self.model:forward(inputs)
+                self.model:zeroGradParameters()
+                loss = self.model:backward(inputs, targets, sizes)
+            end
+            --gradParameters:div(inputs:size(1))
+            gradParameters:div(labelcnt)
+            loss = loss / labelcnt
+            gradParameters:clamp(-0.1,0.1)
+            
+            local _, fs = optim.sgd(feval, x, sgd_params)
+            averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
 
-        local p = j % self.testGap; if p == 0 then p = self.testGap end
-        --xlua.progress(p, self.testGap)
+            local itertime = timer:time().real
+            print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f.')
+                :format(i, n, itertime, datatime, datatime/itertime, fs[1]))
 
-        if j % self.testGap == 0 then
-            -- Update validation error rates
-            local wer = self:testNetwork(j)
-
-            print(string.format("Training Iteration: %d Average Loss: %f Average Validation WER: %.2f%%",
-                j, averageLoss, 100 * wer))
-            table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.
-            table.insert(validationHistory, 100 * wer)
-            self.logger:add { averageLoss, 100 * wer }
-
+            timer:reset()
+            dataTimer:reset()
         end
+        -- Testing
+        local wer = self:testNetwork()
+        print(('TESTING EPOCH: [%d]. WER: %2.2f%%.'):format(i, wer * 100))
 
-        -- periodically save the model
-        if self.saveModel and j % self.saveModelIterations == 0 then
+        table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.
+        table.insert(validationHistory, 100 * wer)
+        self.logger:add { averageLoss, 100 * wer }
+
+        -- snapshot the model
+        if self.saveModel and i % self.saveModelIterations == 0 then
             print("Saving model..")
-            self:saveNetwork(self.modelTrainingPath .. '_iteration_' .. j ..
+            self:saveNetwork(self.modelTrainingPath .. '_epoch_' .. j ..
                 suffix .. '_' .. self.fileName)
         end
     end
