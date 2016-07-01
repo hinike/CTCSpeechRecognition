@@ -3,6 +3,7 @@ require 'Util'
 require 'Mapper'
 require 'torch'
 require 'xlua'
+require 'nnx'
 require 'cutorch'
 local threads = require 'threads'
 local Evaluator = require 'Evaluator'
@@ -21,6 +22,7 @@ function WEREvaluator:__init(_path, mapper, testBatchSize,
     self.suffix = '_' .. os.date('%Y%m%d_%H%M%S')
 
     self.testLoader = Loader(_path, testBatchSize, feature, dataHeight, modelname)
+    self.ctc = nn.CTCCriterion():cuda()
 end
 
 function WEREvaluator:predicTrans(src, nGPU)
@@ -53,6 +55,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
     end
 
     local werPredictions = {} -- stores the predictions to order for log.
+    local loss = 0
     local N = 0
     -- ======================= for every test iteration ==========================
     for n, sample in self.testLoader:nxt_batch() do
@@ -77,7 +80,11 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
             predictions = self:predicTrans(predictions)
         end
 
-        -- =============== for every data point in this batch ==================
+        -- =============== evaluate CTC ==================
+        self.ctc:forward(predictions, targets, sizes)
+        local batchLoss = self.ctc.output / labelcnt
+        loss = loss + batchLoss
+        -- =============== evaluate WER ==================
         local batchWER = 0
         for j = 1, self.testBatchSize do
             local prediction_single = predictions[j]
@@ -87,7 +94,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
             batchWER = batchWER + WER
             table.insert(werPredictions, { wer = WER * 100, target = self:tokens2text(targets[j]), prediction = self:tokens2text(predict_tokens) })
         end
-        print(('Testing | Iter: %d, WER: %2.2f%%'):format(n, batchWER/self.testBatchSize*100))
+        print(('Testing | Iter: %d, Error: %1.3f WER: %2.2f%%'):format(n, batchLoss, batchWER/self.testBatchSize*100))
         N = N + 1
     end
 
@@ -104,11 +111,12 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
         end
     end
     local averageWER = cumWER / (N * self.testBatchSize)
+    loss = loss / N
     local f = assert(io.open(self.logsPath .. 'WER_Test' .. self.suffix .. '.log', 'a'))
     f:write(string.format("Average WER = %.2f%%", averageWER * 100))
     f:close()
 
-    return averageWER
+    return {loss = loss, WER = averageWER}
 end
 
 function WEREvaluator:tokens2text(tokens)

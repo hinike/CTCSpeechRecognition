@@ -52,8 +52,8 @@ function Network:init(networkParams)
         self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight,
             networkParams.dictSize)
     end
-    assert((networkParams.saveModel or networkParams.loadModel) and
-        networkParams.fileName, "To save/load you must specify the fileName you want to save to")
+    --assert((networkParams.saveModel or networkParams.loadModel) and
+    --    networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
         networkParams.validationBatchSize, networkParams.validationIterations,
@@ -67,7 +67,7 @@ function Network:init(networkParams)
     self.trainLoader = Loader(networkParams.trainingSetLMDBPath,
          networkParams.batchSize, networkParams.feature,
          networkParams.dataHeight, networkParams.modelName)
-    self.trainLoader.lmdb_size = 132500
+    self.trainLoader.lmdb_size = 132400
     --self.trainLoader:prep_sorted_inds()
 end
 
@@ -124,7 +124,7 @@ function Network:testNetwork()
             self.model = convertBN(self.model, nn)
         end
     end
-    local wer = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, false) -- details in log
+    local results = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, false) -- details in log
     self.model:zeroGradParameters()
     if self.isCUDNN then
         if self.nGPU > 1 then
@@ -136,7 +136,7 @@ function Network:testNetwork()
         end
     end
     self.model:training()
-    return wer
+    return results
 end
 
 
@@ -202,21 +202,21 @@ function Network:trainNetwork(sgd_params)
             --gradParameters:div(inputs:size(1))
             gradParameters:div(labelcnt)
             loss = loss / labelcnt
-            gradParameters:clamp(-0.1,0.1)
+            gradParameters:clamp(-1,1)
             
             local _, fs = optim.sgd(feval, x, sgd_params)
             averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
 
             local itertime = timer:time().real
-            print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f.')
-                :format(i, n, itertime, datatime, datatime/itertime, fs[1]))
+            print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f. Learning rate: %.3f')
+                :format(i, n, itertime, datatime, datatime/itertime, fs[1], sgd_params.learningRate))
 
             timer:reset()
             dataTimer:reset()
         end
         -- Testing
-        local wer = self:testNetwork()
-        print(('TESTING EPOCH: [%d]. WER: %2.2f%%.'):format(i, wer * 100))
+        local results = self:testNetwork()
+        print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.wer * 100))
 
         table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.
         table.insert(validationHistory, 100 * wer)
