@@ -81,7 +81,8 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
         end
 
         -- =============== evaluate CTC ==================
-        self.ctc:forward(predictions, targets, sizes)
+        local predictions_ctc = predictions:transpose(1,2)
+        self.ctc:forward(predictions_ctc, targets, sizes)
         local batchLoss = self.ctc.output / labelcnt
         loss = loss + batchLoss
         -- =============== evaluate WER ==================

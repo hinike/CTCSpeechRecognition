@@ -213,7 +213,7 @@ function Loader:nxt_inds()
     local overflow = inds[-1] - self.lmdb_size
     if overflow > 0 then
         inds:narrow(1, self.batch_size-overflow+1, overflow):copy(torch.linspace(1, overflow, overflow))
-        self.cnt = overflow
+        self.cnt = overflow + 1
     end
     return inds
 end

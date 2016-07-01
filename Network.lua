@@ -15,6 +15,8 @@ local Network = {}
 
 function Network:init(networkParams)
 
+    self.opts = networkParams
+
     self.fileName = networkParams.fileName -- The file name to save/load the network from.
     self.nGPU = networkParams.nGPU
     self.isCUDNN = networkParams.backend == 'cudnn'
@@ -140,7 +142,7 @@ function Network:testNetwork()
 end
 
 
-function Network:trainNetwork(sgd_params)
+function Network:trainNetwork()
     --[[
         train network with self-defined feval (sgd inside); use ctc for evaluation
     --]]
@@ -161,16 +163,24 @@ function Network:trainNetwork(sgd_params)
         end
     end
 
+    local optim_params = {
+        beta1 = self.opts.beta1, -- adam
+        beta2 = self.opts.beta2, -- adam
+        alpha = self.opts.alpha, -- rmsprop
+        weightDecay = 0,
+        momentum = 0.9,
+        dampening = 0,
+        nesterov = true, -- for sgd
+    }
     -- define the feval
     local loss
     local function feval(x_new)
         return loss, gradParameters
     end
 
+    -- training
     local dataTimer = torch.Timer()
     local timer = torch.Timer()
-    -- training
-    local startTime = os.time()
     local averageLoss = 0
 
     for i = 1, self.trainEpochs do
@@ -204,36 +214,39 @@ function Network:trainNetwork(sgd_params)
             loss = loss / labelcnt
             gradParameters:clamp(-1,1)
             
-            local _, fs = optim.sgd(feval, x, sgd_params)
+            optim_params.learningRate = self:LearningRate(i)
+            local fs
+            if self.opts.optim == 'sgd' then
+                _, fs = optim.sgd(feval, x, optim_params)
+            elseif self.opts.optim == 'rmsprop' then
+                _, fs = optim.rmsprop(feval, x, optim_params)
+            elseif self.opts.optim == 'adam' then
+                _, fs = optim.adam(feval, x, optim_params)
+            end
             averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
 
             local itertime = timer:time().real
             print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f. Learning rate: %.3f')
-                :format(i, n, itertime, datatime, datatime/itertime, fs[1], sgd_params.learningRate))
+                :format(i, n, itertime, datatime, datatime/itertime, fs[1], optim_params.learningRate))
 
             timer:reset()
             dataTimer:reset()
         end
         -- Testing
         local results = self:testNetwork()
-        print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.wer * 100))
+        print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.WER * 100))
 
         table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.
-        table.insert(validationHistory, 100 * wer)
-        self.logger:add { averageLoss, 100 * wer }
+        table.insert(validationHistory, 100 * results.WER)
+        self.logger:add { averageLoss, 100 * results.WER }
 
         -- snapshot the model
         if self.saveModel and i % self.saveModelIterations == 0 then
             print("Saving model..")
-            self:saveNetwork(self.modelTrainingPath .. '_epoch_' .. j ..
+            self:saveNetwork(self.modelTrainingPath .. '_epoch_' .. i ..
                 suffix .. '_' .. self.fileName)
         end
     end
-
-    local endTime = os.time()
-    local secondsTaken = endTime - startTime
-    local minutesTaken = secondsTaken / 60
-    print("Minutes taken to train: ", minutesTaken)
 
     if self.saveModel then
         print("Saving model..")
@@ -266,6 +279,12 @@ function Network:makeDirectories(folderPaths)
     for index, folderPath in ipairs(folderPaths) do
         if (folderPath ~= nil) then os.execute("mkdir -p " .. folderPath) end
     end
+end
+
+function Network:LearningRate(epoch)
+   -- Training schedule
+   local decay = math.floor((epoch - self.opts.learning_rate_decay_after - 1) / self.opts.learning_rate_decay_every) + 1
+   return self.opts.learning_rate * math.pow(0.1, decay)
 end
 
 return Network

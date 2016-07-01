@@ -25,7 +25,7 @@ cmd:option('-validationSetLMDBPath', '/data1/zhirongw/LibriSpeech/test/', 'valid
 cmd:option('-logsTrainPath', './logs/TrainingLoss/', 'loss log directory')
 cmd:option('-logsValidationPath', './logs/ValidationScores/', 'scores log directory')
 cmd:option('-modelTrainingPath', './models/', 'model snapshot directory')
-cmd:option('-filename', 'CTCNetwork.t7', 'model snapshot filename')
+cmd:option('-fileName', 'CTCNetwork.t7', 'model snapshot filename')
 cmd:option('-dictionaryPath', './dictionary', 'dictionary path')
 -- Model
 cmd:option('-feature', 'spect', 'input feature of the sound wave')
@@ -40,12 +40,17 @@ cmd:option('-epochs', 70, 'training epochs')
 cmd:option('-validationBatchSize', 24, 'testing batch size')
 cmd:option('-saveModelIterations', 10, 'every several epochs for snapshot')
 -- optim
+cmd:option('-optim','sgd','optimization algorithm')
 cmd:option('-learning_rate',1e-1,'learning rate')
 cmd:option('-learning_rate_decay',1e-9,'learning rate decay')
-cmd:option('-learning_rate_decay_after',10,'in number of epochs, when to start decaying the learning rate')
+cmd:option('-learning_rate_decay_after',20,'in number of epochs, when to start decaying the learning rate')
+cmd:option('-learning_rate_decay_every',20,'decrease learning rate every')
+cmd:option('-beta1',0.8,'beta1 for adam')
+cmd:option('-beta2',0.95,'beta2 for adam')
+cmd:option('-alpha',0.8,'alpha for rmsprop')
 cmd:option('-weight_decay',0,'weight decay')
 cmd:option('-decay_rate',0.95,'decay rate for rmsprop')
-cmd:option('-grad_clip',5,'clip gradients at this value')
+cmd:option('-grad_clip',1,'clip gradients at this value') -- not used
 cmd:text()
 
 local opts = cmd:parse(arg)
@@ -63,7 +68,7 @@ local sgdParams = {
 --Create and train the network based on the parameters and training data.
 Network:init(opts)
 
-Network:trainNetwork(sgdParams)
+Network:trainNetwork()
 
 --Creates the loss plot.
 Network:createLossGraph()
