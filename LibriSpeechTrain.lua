@@ -32,8 +32,9 @@ cmd:option('-feature', 'spect', 'input feature of the sound wave')
 cmd:option('-dataHeight', 129, 'feature dimension')
 cmd:option('-dictSize', 29, 'language dictionary size')
 cmd:option('-modelName', 'DeepSpeechModelSpect', 'model architecture')
-cmd:option('-hiddenSize', 400, 'LSTM hidden memory size')
-cmd:option('-num_layers', 5, 'number of LSTM layers')
+cmd:option('-hidden_size', 400, 'hidden memory size')
+cmd:option('-num_layers', 5, 'number of rnn layers')
+cmd:option('-rnn_type', 'rnn', 'rnn, gru, or lstm?')
 -- configs
 cmd:option('-batchSize', 200, 'training batch size')
 cmd:option('-epochs', 70, 'training epochs')
@@ -54,16 +55,6 @@ cmd:option('-grad_clip',1,'clip gradients at this value') -- not used
 cmd:text()
 
 local opts = cmd:parse(arg)
-
---Parameters for the stochastic gradient descent (using the optim library).
-local sgdParams = {
-    learningRate = opts.learning_rate,
-    learningRateDecay = opts.learning_rate_decay,
-    weightDecay = 0,
-    momentum = 0.9,
-    dampening = 0,
-    nesterov = true
-}
 
 --Create and train the network based on the parameters and training data.
 Network:init(opts)

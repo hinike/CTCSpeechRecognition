@@ -51,8 +51,8 @@ function Network:init(networkParams)
             self.isCUDNN)
     else
         assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName, networkParams.dataHeight,
-            networkParams.dictSize)
+        self:prepSpeechModel(networkParams.modelName, networkParams.rnn_type, 
+            networkParams.hidden_size, networkParams.num_layers, networkParams.dictSize)
     end
     --assert((networkParams.saveModel or networkParams.loadModel) and
     --    networkParams.fileName, "To save/load you must specify the fileName you want to save to")
@@ -76,9 +76,9 @@ function Network:init(networkParams)
 end
 
 
-function Network:prepSpeechModel(modelName, dataHeight, dict_size)
+function Network:prepSpeechModel(modelName, rnn_type, hidden_size, num_layers, dict_size)
     local model = require(modelName)
-    self.model = model[1](self.nGPU, self.isCUDNN, dataHeight, dict_size)
+    self.model = model[1](rnn_type, hidden_size, num_layers, dict_size, self.nGPU, self.isCUDNN)
     self.calSizeOfSequences = model[2]
 end
 

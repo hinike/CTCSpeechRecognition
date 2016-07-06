@@ -4,10 +4,18 @@ require 'BGRU'
 require 'BRNN'
 
 -- Wraps rnn module into bi-directional.
-local function BLSTM(model, nIn, nHidden, is_cudnn)
+local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
     if is_cudnn then
         require 'cudnn'
-        model:add(cudnn.BRNN(nIn, nHidden, 1))
+        if rnnType == 'rnn' then
+          model:add(cudnn.BRNN(nIn, nHidden, 1))
+        elseif rnnType == 'gru' then
+          model:add(cudnn.BGRU(nIn, nHidden, 1))
+        elseif rnnType == 'lstm' then
+          model:add(cudnn.BLSTM(nIn, nHidden, 1))
+        else
+          error('rnn type not defined')
+        end
     else
         require 'rnn'
         local fwdLstm = nn.SeqLSTM(nIn, nHidden)
@@ -37,15 +45,13 @@ local function get_min_width()
 end
 
 
-local function deepSpeech(nGPU, isCUDNN, height, dict_size)
+local function deepSpeech(rnnType, rnnHiddenSize, nbOfHiddenLayers, dict_size, nGPU, isCUDNN)
     --[[
         Creates the covnet+rnn structure.
         input:
             height: specify the dataHeight, typically 129 for spect; 26 for logfbank
             dict_size = size of dictionary
     --]]
-
-    local GRU = false
     local model = nn.Sequential()
 
     -- (nInputPlane, nOutputPlane, kW, kH, [dW], [dH], [padW], [padH]) conv layers.
@@ -62,17 +68,15 @@ local function deepSpeech(nGPU, isCUDNN, height, dict_size)
     model:add(nn.ReLU(true))
 
     local rnnInputsize = 96 * 40 -- outputPlanes X outputHeight
-    local rnnHiddenSize = 1500 -- size of rnn hidden layers
     local rnnOutputSize = 2*rnnHiddenSize -- size of rnn output
-    local nbOfHiddenLayers = 4
 
     model:add(nn.View(rnnInputsize, -1):setNumInputDims(3)) -- batch x models x seqLength
     model:add(nn.Transpose({ 2, 3 }, { 1, 2 })) -- seqLength x batch x models
 
-    BLSTM(model, rnnInputsize, rnnHiddenSize, isCUDNN)
+    BLSTM(model, rnnType, rnnInputsize, rnnHiddenSize, isCUDNN)
 
-    for i = 1, nbOfHiddenLayers do
-        BLSTM(model, rnnOutputSize, rnnHiddenSize, isCUDNN)
+    for i = 1, nbOfHiddenLayers-1 do
+        BLSTM(model, rnnType, rnnOutputSize, rnnHiddenSize, isCUDNN)
     end
 
     model:add(nn.View(-1, rnnOutputSize)) -- (seqLength x batch) x models
