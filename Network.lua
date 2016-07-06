@@ -57,6 +57,8 @@ function Network:init(networkParams)
     --assert((networkParams.saveModel or networkParams.loadModel) and
     --    networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
+    -- setting online loading
+
     self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
         networkParams.validationBatchSize, networkParams.validationIterations,
         self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
@@ -184,7 +186,8 @@ function Network:trainNetwork()
     local averageLoss = 0
 
     for i = 1, self.trainEpochs do
-        for n, sample in self.trainLoader:nxt_batch(self.trainLoader.DEFAULT) do
+	local batch_type = i == 1 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+        for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
             local datatime = dataTimer:time().real
             local inputs, sizes, targets, labelcnt

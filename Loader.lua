@@ -39,6 +39,7 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
     self.DEFAULT = 1
     self.SAMELEN = 2
     self.SORTED = 3
+    self.RANDOM = 4
 
     self.modelname = modelname
     self.batch_size = batch_size
@@ -185,6 +186,10 @@ function Loader:nxt_sorted_inds()
     return inds
 end
 
+function Loader:nxt_random_inds()
+    local start_idx = torch.ceil(torch.rand(1)[1] * (self.lmdb_size - self.batch_size + 1))
+    return torch.linspace(start_idx, start_idx+self.batch_size-1, self.batch_size)
+end
 
 function Loader:nxt_same_len_inds()
     --[[
@@ -237,7 +242,7 @@ function Loader:nxt_batch(mode)
         return a batch by loading from lmdb just-in-time
 
         input:
-            mode: should be Loader.DEFAULT/SAMELEN/SORTED; USE ONLY ONE MODE FOR ONE TRAINING
+            mode: should be Loader.DEFAULT/SAMELEN/SORTED/RANDOM; USE ONLY ONE MODE FOR ONE TRAINING
             flag: indicates whether to load trans
 
         TODO we allocate 2 * batch_size space
@@ -256,6 +261,8 @@ function Loader:nxt_batch(mode)
             elseif mode == self.SORTED then
                 assert(#self.sorted_inds > 0, 'call prep_sorted_inds before nxt_batch')
                 indices = self:nxt_sorted_inds()
+            elseif mode == self.RANDOM then
+                indices = self:nxt_random_inds()
             else -- default
                 indices = self:nxt_inds()
             end

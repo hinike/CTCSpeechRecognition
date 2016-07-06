@@ -16,8 +16,8 @@ local networkParams = {
 
     -- these 5 usually need to change together
     modelName = 'DeepSpeechModelSpect',
-    trainingSetLMDBPath = '/data1/zhirongw/LibriSpeech/train',-- online loading path data.
-    validationSetLMDBPath = '/data1/zhirongw/LibriSpeech/test/',
+    trainingSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/train/',-- online loading path data.
+    validationSetLMDBPath = '/data1/nfs_share/data/LibriSpeech/test/',
     feature = 'spect', -- can be spect or logfbank
     dataHeight = 129, -- if using logfbank, this means nfilts
 
