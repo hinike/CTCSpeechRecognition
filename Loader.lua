@@ -187,8 +187,15 @@ function Loader:nxt_sorted_inds()
 end
 
 function Loader:nxt_random_inds()
-    local start_idx = torch.ceil(torch.rand(1)[1] * (self.lmdb_size - self.batch_size + 1))
-    return torch.linspace(start_idx, start_idx+self.batch_size-1, self.batch_size)
+    local bid = self.perm[math.floor(self.idx / self.batch_size)+1]-1
+    local start = (self.offset + bid * self.batch_size)%self.lmdb_size
+    local inds = torch.linspace(start, start+self.batch_size-1, self.batch_size)
+    local overflow = inds[-1] - self.lmdb_size
+    if overflow > 0 then
+        inds:narrow(1, self.batch_size-overflow+1, overflow):copy(torch.linspace(1, overflow, overflow))
+        self.cnt = overflow + 1
+    end
+    return inds
 end
 
 function Loader:nxt_same_len_inds()
@@ -249,10 +256,15 @@ function Loader:nxt_batch(mode)
     --]]
 
     local pool = self.pool
+    -- for random idx
+    self.perm = torch.randperm(math.ceil(self.lmdb_size/self.batch_size))
+    --self.offset = torch.random(self.lmdb_size)
+    self.offset = 1
 
-    local idx, sample = 1, nil
+    local sample = nil
+    self.idx = 1 -- index the countings//// cnt indicates the position
     local function enqueue()
-        while idx <= self.lmdb_size and pool:acceptsjob() do
+        while self.idx <= self.lmdb_size and pool:acceptsjob() do
             -- gen index for this iter batch
             local indices
             if mode == self.SAMELEN then
@@ -319,7 +331,7 @@ function Loader:nxt_batch(mode)
                     sample = _sample_
                 end,
                 indices)
-            idx = idx + indices:size(1)
+            self.idx = self.idx + indices:size(1)
         end
     end
 

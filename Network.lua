@@ -154,6 +154,7 @@ function Network:trainNetwork()
     local validationHistory = {}
 
     local x, gradParameters = self.model:getParameters()
+    print('Number of network parameters: ' .. x:nElement())
 
     local criterion
     if self.nGPU <= 1 then
@@ -186,7 +187,8 @@ function Network:trainNetwork()
     local averageLoss = 0
 
     for i = 1, self.trainEpochs do
-	local batch_type = i == 1 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+	--local batch_type = i == 1 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+        local batch_type = self.trainLoader.RANDOM
         for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
             local datatime = dataTimer:time().real
@@ -215,7 +217,7 @@ function Network:trainNetwork()
             --gradParameters:div(inputs:size(1))
             gradParameters:div(labelcnt)
             loss = loss / labelcnt
-            gradParameters:clamp(-1,1)
+            gradParameters:clamp(-0.1,0.1)
             
             optim_params.learningRate = self:LearningRate(i)
             local fs
