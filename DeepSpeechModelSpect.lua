@@ -29,18 +29,18 @@ end
 
 -- Based on convolution kernel and strides.
 local function calculateInputSizes(sizes)
-    sizes = torch.floor((sizes - 41) / 2 + 1) -- conv1
-    sizes = torch.floor((sizes - 21) / 2 + 1) -- conv2
-    sizes = torch.floor((sizes - 21) / 2 + 1) -- conv3
+    sizes = torch.floor((sizes - 11) / 2 + 1) -- conv1
+    sizes = torch.floor((sizes - 11) + 1) -- conv2
+    sizes = torch.floor((sizes - 11) + 1) -- conv3
     return sizes
 end
 
 
 local function get_min_width()
     local width = 1
-    width = (width+1) * 2 + 41
-    width = (width+1) * 2+ 21
-    width = (width+1) * 2+ 21
+    width = (width+1) * 2 + 11
+    width = (width+1) + 11
+    width = (width+1) + 11
     return width
 end
 
@@ -55,19 +55,19 @@ local function deepSpeech(rnnType, rnnHiddenSize, nbOfHiddenLayers, dict_size, n
     local model = nn.Sequential()
 
     -- (nInputPlane, nOutputPlane, kW, kH, [dW], [dH], [padW], [padH]) conv layers.
-    model:add(nn.SpatialConvolution(1, 32, 41, 11, 2, 2))
+    model:add(nn.SpatialConvolution(1, 32, 11, 41, 2, 2))
     model:add(nn.SpatialBatchNormalization(32, 1e-3))
     model:add(nn.ReLU(true))
-    model:add(nn.SpatialConvolution(32, 32, 21, 11, 2, 1))
+    model:add(nn.SpatialConvolution(32, 32, 11, 21, 1, 2))
     model:add(nn.SpatialBatchNormalization(32, 1e-3))
     model:add(nn.ReLU(true))
     -- TODO the DS2 architecture does not include this layer, but mem overhead increases.
     -- model:add(nn.SpatialMaxPooling(2, 2, 2, 2))
-    model:add(nn.SpatialConvolution(32, 96, 21, 11, 2, 1))
+    model:add(nn.SpatialConvolution(32, 96, 11, 21, 1, 2))
     model:add(nn.SpatialBatchNormalization(96, 1e-3))
     model:add(nn.ReLU(true))
 
-    local rnnInputsize = 96 * 40 -- outputPlanes X outputHeight
+    local rnnInputsize = 96 * 1 -- outputPlanes X outputHeight
     local rnnOutputSize = 2*rnnHiddenSize -- size of rnn output
 
     model:add(nn.View(rnnInputsize, -1):setNumInputDims(3)) -- batch x models x seqLength

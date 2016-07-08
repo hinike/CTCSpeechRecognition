@@ -214,8 +214,8 @@ function Network:trainNetwork()
                 self.model:zeroGradParameters()
                 loss = self.model:backward(inputs, targets, sizes)
             end
-            --gradParameters:div(inputs:size(1))
-            gradParameters:div(labelcnt)
+            gradParameters:div(inputs:size(1))
+            --gradParameters:div(labelcnt)
             loss = loss / labelcnt
             gradParameters:clamp(-0.1,0.1)
             
