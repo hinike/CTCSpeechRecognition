@@ -65,7 +65,7 @@ function Network:init(networkParams)
         networkParams.modelName)
 
     self.logger = optim.Logger(self.logsTrainPath .. 'train' .. suffix .. '.log')
-    self.logger:setNames { 'loss', 'WER' }
+    self.logger:setNames { '    loss    ', '    WER' }
     self.logger:style { '-', '-' }
 
     self.trainLoader = Loader(networkParams.trainingSetLMDBPath,
@@ -74,7 +74,6 @@ function Network:init(networkParams)
     self.trainLoader.lmdb_size = 132400
     --self.trainLoader:prep_sorted_inds()
 end
-
 
 function Network:prepSpeechModel(modelName, rnn_type, hidden_size, num_layers, dict_size)
     local model = require(modelName)
@@ -160,10 +159,8 @@ function Network:trainNetwork()
     if self.nGPU <= 1 then
         criterion = nn.CTCCriterion()
     end
-    if self.nGPU > 0 then
-        if self.nGPU == 1 then
-            criterion = criterion:cuda()
-        end
+    if self.nGPU == 1 then
+        criterion = criterion:cuda()
     end
 
     local optim_params = {

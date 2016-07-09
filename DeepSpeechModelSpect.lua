@@ -2,6 +2,7 @@ require 'UtilsMultiGPU'
 require 'BNDecorator'
 require 'BGRU'
 require 'BRNN'
+require 'SplitAdd'
 
 -- Wraps rnn module into bi-directional.
 local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
@@ -23,6 +24,7 @@ local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
         local ct = nn.ConcatTable():add(fwdLstm):add(bwdLstm)
         model:add(ct):add(nn.JoinTable(3))
     end
+   -- model:add(nn.SplitAdd())
     model:add(nn.BNDecorator(2*nHidden))
 end
 

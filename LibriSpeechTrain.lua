@@ -55,6 +55,7 @@ cmd:option('-grad_clip',1,'clip gradients at this value') -- not used
 cmd:text()
 
 local opts = cmd:parse(arg)
+print (opts)
 
 --Create and train the network based on the parameters and training data.
 Network:init(opts)

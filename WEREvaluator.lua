@@ -114,7 +114,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
     local averageWER = cumWER / (N * self.testBatchSize)
     loss = loss / N
     local f = assert(io.open(self.logsPath .. 'WER_Test' .. self.suffix .. '.log', 'a'))
-    f:write(string.format("Average WER = %.2f%%", averageWER * 100))
+    f:write(string.format("Average WER = %.2f%%\n", averageWER * 100))
     f:close()
 
     return {loss = loss, WER = averageWER}

@@ -37,21 +37,28 @@ local function clear(tensor)
     end
 end
 
+local function cleanDPT(module)
+    local newDPT = nn.DataParallelTableTrans(1)
+    newDPT:add(module:get(1):clone('weight','bias','running_mean','running_var'), 1)
+    return newDPT
+end
+
 function saveDataParallel(filename, orgModel)
     local model_type = torch.type(orgModel)
     local model
     if model_type == 'nn.DataParallelTable' or
         model_type == 'nn.DataParallelTableTrans' then
-        model = orgModel:get(1):clone()
-        model:clearState()
+        model = cleanDPT(orgModel)
+    --    model:clearState()
     elseif model_type == 'nn.Sequential' then
         local temp_model = nn.Sequential()
         for i, module in ipairs(model.modules) do
             if torch.type(module) == 'nn.DataParallelTable' or
                 torch.type(module) == 'nn.DataParallelTableTrans' then
-                temp_model:add(module:get(1))
+                temp_model:add(cleanDPT(module))
+
             else
-                temp_model:add(module)
+                temp_model:add(module:clone('weight','bias','running_mean','running_var'))
             end
         end
         model = temp_model
@@ -59,31 +66,31 @@ function saveDataParallel(filename, orgModel)
         assert(model_type == 'nn.gModule',
             'This saving function only works with Sequential, gModule or DataParallelTable modules.')
     end
-    if torch.type(model) == 'nn.gModule' then
-        for _,node in ipairs(model.forwardnodes) do
-            m = node.data.module
-            if m then
-                if m.modules then
-                    for _,inner_m in ipairs(m.modules) do
-                        if torch.type(inner_m) == 'cudnn.LSTM' then
-                            clear(inner_m.hiddenOutput)
-                            clear(inner_m.cellOutput)
-                            clear(inner_m.gradHiddenInput)
-                            clear(inner_m.gradCellInput)
-                            clear(inner_m.workspace)
-                        else
-                            inner_m.gradBias = nil
-                        end
-                        inner_m.gradWeight = nil
-                    end
-                end
-                clear(m.reverse_input)
-                clear(m._input)
-                clear(m.reverse_gradOutput)
-                clear(m._gradOutput)
-            end
-        end
-    end
+    --if torch.type(model) == 'nn.gModule' then
+    --    for _,node in ipairs(model.forwardnodes) do
+    --        m = node.data.module
+    --        if m then
+    --            if m.modules then
+    --                for _,inner_m in ipairs(m.modules) do
+    --                    if torch.type(inner_m) == 'cudnn.LSTM' then
+    --                        clear(inner_m.hiddenOutput)
+    --                        clear(inner_m.cellOutput)
+    --                        clear(inner_m.gradHiddenInput)
+    --                        clear(inner_m.gradCellInput)
+    --                        clear(inner_m.workspace)
+    --                    else
+    --                        inner_m.gradBias = nil
+    --                    end
+    --                    inner_m.gradWeight = nil
+    --                end
+    --            end
+    --            clear(m.reverse_input)
+    --            clear(m._input)
+    --            clear(m.reverse_gradOutput)
+    --            clear(m._gradOutput)
+    --        end
+    --    end
+    --end
     torch.save(filename, model)
 end
 
