@@ -102,7 +102,7 @@ function Loader:__init(_dir, batch_size, feature, dataHeight, modelname)
         _G.stats = preprocess()
         return l1
     end
-    
+
     local pool, lmdb_size = threads.Threads(1, init, main)
 
     self.pool = pool
@@ -287,7 +287,7 @@ function Loader:nxt_batch(mode)
 
                     local max_w = 0
                     local h = 0
-                  
+
                     _G.db_spect:open(); local txn_spect = _G.db_spect:txn(true) -- readonly
                     _G.db_label:open(); local txn_label = _G.db_label:txn(true)
 
@@ -303,7 +303,7 @@ function Loader:nxt_batch(mode)
                        local label = torch.deserialize(txn_label:get(idx))
 
                        h = tensor:size(1)
-                       sizes_array[i] = tensor:size(2) 
+                       sizes_array[i] = tensor:size(2)
                        if max_w < tensor:size(2) then max_w = tensor:size(2) end -- find the max len in this batch
 
                        tensor_list:insert(tensor)
@@ -347,7 +347,7 @@ function Loader:nxt_batch(mode)
         end
         enqueue()
         n = n + 1
-        return n, sample 
+        return n, sample
     end
 
     return loop

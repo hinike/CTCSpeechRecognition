@@ -51,7 +51,7 @@ function Network:init(networkParams)
             self.isCUDNN)
     else
         assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName, networkParams.rnn_type, 
+        self:prepSpeechModel(networkParams.modelName, networkParams.rnn_type,
             networkParams.hidden_size, networkParams.num_layers, networkParams.dictSize)
     end
     --assert((networkParams.saveModel or networkParams.loadModel) and
@@ -215,7 +215,7 @@ function Network:trainNetwork()
             --gradParameters:div(labelcnt)
             loss = loss / labelcnt
             gradParameters:clamp(-0.1,0.1)
-            
+
             optim_params.learningRate = self:LearningRate(i)
             local fs
             if self.opts.optim == 'sgd' then
