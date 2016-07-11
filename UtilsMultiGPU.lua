@@ -20,8 +20,9 @@ function makeDataParallel(model, nGPU, is_cudnn)
                                  require 'nnx'
                                  require 'warp_ctc'
                                  require 'BNDecorator'
-				 require 'BGRU'
-				 require 'BRNN'
+                                 require 'SplitAdd'
+				                         require 'BGRU'
+				                         require 'BRNN'
                              end)
                 dpt.gradInput = nil
                 model = dpt
@@ -49,7 +50,7 @@ function saveDataParallel(filename, orgModel)
     if model_type == 'nn.DataParallelTable' or
         model_type == 'nn.DataParallelTableTrans' then
         model = cleanDPT(orgModel)
-    --    model:clearState()
+        model:clearState()
     elseif model_type == 'nn.Sequential' then
         local temp_model = nn.Sequential()
         for i, module in ipairs(model.modules) do

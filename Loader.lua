@@ -258,8 +258,8 @@ function Loader:nxt_batch(mode)
     local pool = self.pool
     -- for random idx
     self.perm = torch.randperm(math.ceil(self.lmdb_size/self.batch_size))
-    --self.offset = torch.random(self.lmdb_size)
-    self.offset = 1
+    self.offset = torch.random(self.lmdb_size)
+    --self.offset = 1
 
     local sample = nil
     self.idx = 1 -- index the countings//// cnt indicates the position

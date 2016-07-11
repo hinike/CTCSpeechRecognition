@@ -24,8 +24,8 @@ local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
         local ct = nn.ConcatTable():add(fwdLstm):add(bwdLstm)
         model:add(ct):add(nn.JoinTable(3))
     end
-   -- model:add(nn.SplitAdd())
-    model:add(nn.BNDecorator(2*nHidden))
+    model:add(nn.SplitAdd())
+    model:add(nn.BNDecorator(nHidden))
 end
 
 
@@ -70,7 +70,7 @@ local function deepSpeech(rnnType, rnnHiddenSize, nbOfHiddenLayers, dict_size, n
     model:add(nn.ReLU(true))
 
     local rnnInputsize = 96 * 1 -- outputPlanes X outputHeight
-    local rnnOutputSize = 2*rnnHiddenSize -- size of rnn output
+    local rnnOutputSize = rnnHiddenSize -- size of rnn output
 
     model:add(nn.View(rnnInputsize, -1):setNumInputDims(3)) -- batch x models x seqLength
     model:add(nn.Transpose({ 2, 3 }, { 1, 2 })) -- seqLength x batch x models
