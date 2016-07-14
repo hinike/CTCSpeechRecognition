@@ -1,22 +1,19 @@
 require 'UtilsMultiGPU'
 require 'BNDecorator'
-require 'BGRU'
-require 'BRNN'
-require 'SplitAdd'
 
 -- Wraps rnn module into bi-directional.
-local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
+local function BRNN(model, rnnType, nIn, nHidden, is_cudnn)
     if is_cudnn then
         require 'cudnn'
-        if rnnType == 'rnn' then
-          model:add(cudnn.BRNN(nIn, nHidden, 1))
-        elseif rnnType == 'gru' then
-          model:add(cudnn.BGRU(nIn, nHidden, 1))
-        elseif rnnType == 'lstm' then
-          model:add(cudnn.BLSTM(nIn, nHidden, 1))
-        else
-          error('rnn type not defined')
+        local rnn = cudnn.RNN(nIn, nHidden, 1)
+        rnn.mode = 'CUDNN_'..rnnType
+        if nIn == nHidden then
+            rnn.inputMode = 'CUDNN_SKIP_INPUT'
         end
+        rnn.bidirectional = 'CUDNN_BIDIRECTIONAL'
+        rnn.numDirections = 2
+        rnn:reset()
+        model:add(rnn)
     else
         require 'rnn'
         local fwdLstm = nn.SeqLSTM(nIn, nHidden)
@@ -24,7 +21,8 @@ local function BLSTM(model, rnnType, nIn, nHidden, is_cudnn)
         local ct = nn.ConcatTable():add(fwdLstm):add(bwdLstm)
         model:add(ct):add(nn.JoinTable(3))
     end
-    model:add(nn.SplitAdd())
+    model:add(nn.View(-1, 2, nHidden):setNumInputDims(2))
+    model:add(nn.Sum(3))
     model:add(nn.BNDecorator(nHidden))
 end
 
@@ -75,15 +73,16 @@ local function deepSpeech(rnnType, rnnHiddenSize, nbOfHiddenLayers, dict_size, n
     model:add(nn.View(rnnInputsize, -1):setNumInputDims(3)) -- batch x models x seqLength
     model:add(nn.Transpose({ 2, 3 }, { 1, 2 })) -- seqLength x batch x models
 
-    BLSTM(model, rnnType, rnnInputsize, rnnHiddenSize, isCUDNN)
+    BRNN(model, rnnType, rnnInputsize, rnnHiddenSize, isCUDNN)
 
     for i = 1, nbOfHiddenLayers-1 do
-        BLSTM(model, rnnType, rnnOutputSize, rnnHiddenSize, isCUDNN)
+        BRNN(model, rnnType, rnnOutputSize, rnnHiddenSize, isCUDNN)
     end
 
     model:add(nn.View(-1, rnnOutputSize)) -- (seqLength x batch) x models
     model:add(nn.Linear(rnnOutputSize, dict_size))
     model = makeDataParallel(model, nGPU, isCUDNN)
+    print (model)
     return model
 end
 

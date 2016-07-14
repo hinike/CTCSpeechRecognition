@@ -169,3 +169,8 @@ function DataParallelTableTrans:__backward_inner(method, input, target, size, sc
     cutorch.setDevice(prevGpuid)
     return loss:sum()
 end
+
+function DataParallelTableTrans:__tostring__()
+    local selfstring = ('%s: %d GPUs\n'):format(torch.type(self), #self.gpuAssignments)
+    return selfstring..self.modules[1]:__tostring__()
+end

@@ -188,7 +188,7 @@ end
 
 function Loader:nxt_random_inds()
     local bid = self.perm[math.floor(self.idx / self.batch_size)+1]-1
-    local start = (self.offset + bid * self.batch_size)%self.lmdb_size
+    local start = (self.offset + bid * self.batch_size)%self.lmdb_size+1
     local inds = torch.linspace(start, start+self.batch_size-1, self.batch_size)
     local overflow = inds[-1] - self.lmdb_size
     if overflow > 0 then

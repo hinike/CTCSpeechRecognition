@@ -5,7 +5,6 @@ require 'lfs'
 require 'xlua'
 require 'UtilsMultiGPU'
 require 'Loader'
-require 'nngraph'
 require 'Mapper'
 require 'WEREvaluator'
 
@@ -228,7 +227,7 @@ function Network:trainNetwork()
             averageLoss = 0.9 * averageLoss + 0.1 * fs[1]
 
             local itertime = timer:time().real
-            print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f. Learning rate: %.3f')
+            print(('Iter: [%d][%d]. Time %.3f data %.3f Ratio %.3f. Error: %1.3f. Learning rate: %f')
                 :format(i, n, itertime, datatime, datatime/itertime, fs[1], optim_params.learningRate))
 
             timer:reset()
