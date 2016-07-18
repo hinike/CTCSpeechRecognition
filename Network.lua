@@ -70,7 +70,7 @@ function Network:init(networkParams)
     self.trainLoader = Loader(networkParams.trainingSetLMDBPath,
          networkParams.batchSize, networkParams.feature,
          networkParams.dataHeight, networkParams.modelName)
-    self.trainLoader.lmdb_size = 132400
+--    self.trainLoader.lmdb_size = 2
     --self.trainLoader:prep_sorted_inds()
 end
 
@@ -114,7 +114,7 @@ local function convertBN(net, dst)
     end)
 end
 
-function Network:testNetwork()
+function Network:testNetwork(currentIteration)
     self.model:evaluate()
     require 'BNDecorator'
     if self.isCUDNN then
@@ -126,7 +126,7 @@ function Network:testNetwork()
             self.model = convertBN(self.model, nn)
         end
     end
-    local results = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, false) -- details in log
+    local results = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
     self.model:zeroGradParameters()
     if self.isCUDNN then
         if self.nGPU > 1 then
@@ -183,7 +183,7 @@ function Network:trainNetwork()
     local averageLoss = 0
 
     for i = 1, self.trainEpochs do
-	--local batch_type = i == 1 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+	  local batch_type = i < 10 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
         local batch_type = self.trainLoader.RANDOM
         for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
@@ -234,7 +234,7 @@ function Network:trainNetwork()
             dataTimer:reset()
         end
         -- Testing
-        local results = self:testNetwork()
+        local results = self:testNetwork(i)
         print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.WER * 100))
 
         table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.

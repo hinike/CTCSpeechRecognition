@@ -31,13 +31,11 @@ local function trans2tokens(line, _mapper)
     line = line:gsub('^%s', ''):gsub('', ''):gsub('', ''):gsub('%(.+%)', ''):gsub('%s$', ''):gsub('<s>', ''):gsub('</s>', '')
     -- strip
     line = line:match("^%s*(.-)%s*$")
-    for i = 1, #line do
-        local character = line:sub(i, i)
+    for character in string.gfind(line, "[%z\1-\127\194-\244][\128-\191]*") do
         local token = _mapper.alphabet2token[character]
         -- ignore all symbol (e.g. ", . - ...") that are not in dict
         if token ~= nil then table.insert(label, token) end
     end
-
     return label, line
 end
 
@@ -96,7 +94,6 @@ function util.mk_lmdb(root_path, index_path, dict_path, out_dir, windowSize, str
         -- make spect
         local wave = audio.load(root_path .. wave_path)
         local spect = audio.spectrogram(wave, windowSize, 'hamming', stride) -- freq-by-frames tensor
-        
         if spect:size(2) >= #label then -- ensure more frames than label
             -- put into lmdb
             txn_spect:put(cnt, spect:float())

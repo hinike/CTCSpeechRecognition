@@ -299,9 +299,7 @@ function Loader:nxt_batch(mode)
                        else
                     --       tensor = self:convert_tensor(txn_spect:get(idx, true))
                        end
-
                        local label = torch.deserialize(txn_label:get(idx))
-
                        h = tensor:size(1)
                        sizes_array[i] = tensor:size(2)
                        if max_w < tensor:size(2) then max_w = tensor:size(2) end -- find the max len in this batch
