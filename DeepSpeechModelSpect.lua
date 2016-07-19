@@ -7,9 +7,9 @@ local function BRNN(model, rnnType, nIn, nHidden, is_cudnn)
         require 'cudnn'
         local rnn = cudnn.RNN(nIn, nHidden, 1)
         rnn.mode = 'CUDNN_'..rnnType
-        if nIn == nHidden then
-            rnn.inputMode = 'CUDNN_SKIP_INPUT'
-        end
+--        if nIn == nHidden then
+--            rnn.inputMode = 'CUDNN_SKIP_INPUT'
+--        end
         rnn.bidirectional = 'CUDNN_BIDIRECTIONAL'
         rnn.numDirections = 2
         rnn:reset()

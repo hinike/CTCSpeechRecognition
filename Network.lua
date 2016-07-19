@@ -16,127 +16,111 @@ function Network:init(networkParams)
 
     self.opts = networkParams
 
-    self.fileName = networkParams.fileName -- The file name to save/load the network from.
-    self.nGPU = networkParams.nGPU
-    self.isCUDNN = networkParams.backend == 'cudnn'
-    if self.nGPU <= 0 then
-        assert(not self.isCUDNN)
+    self.opts.isCUDNN = self.opts.backend == 'cudnn'
+    if self.opts.nGPU <= 0 then
+        assert(not self.opts.isCUDNN)
     end
-    assert(networkParams.batchSize % networkParams.nGPU == 0, 'batch size must be the multiple of nGPU')
-    assert(networkParams.validationBatchSize % networkParams.nGPU == 0, 'batch size must be the multiple of nGPU')
-    self.trainingSetLMDBPath = networkParams.trainingSetLMDBPath
-    self.validationSetLMDBPath = networkParams.validationSetLMDBPath
-    self.logsTrainPath = networkParams.logsTrainPath or nil
-    self.logsValidationPath = networkParams.logsValidationPath or nil
-    self.modelTrainingPath = networkParams.modelTrainingPath or nil
-    self.trainEpochs = networkParams.epochs
+    assert(self.opts.batchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
+    assert(self.opts.validationBatchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
 
-    self.dataHeight = networkParams.dataHeight
-    self.feature = networkParams.dataHeight
-
-    self:makeDirectories({ self.logsTrainPath, self.logsValidationPath, self.modelTrainingPath })
-
-    self.mapper = Mapper(networkParams.dictionaryPath)
-    self.saveModel = networkParams.saveModel
-    self.loadModel = networkParams.loadModel
-    self.saveModelIterations = networkParams.saveModelIterations or 1000 -- Saves model every number of iterations.
+    self:makeDirectories({ self.opts.logsTrainPath, self.opts.logsValidationPath, self.opts.modelTrainingPath })
 
     -- TODO may not work for current version
     -- setting model saving/loading
-    if (self.loadModel) then
-        assert(networkParams.fileName, "Filename hasn't been given to load model.")
-        self:loadNetwork(networkParams.fileName,
-            networkParams.modelName,
-            self.isCUDNN)
+    if (self.opts.loadModel) then
+        assert(self.opts.fileName, "Filename hasn't been given to load model.")
+        self:loadNetwork(self.opts.fileName,
+                         self.opts.modelName,
+                         self.opts.isCUDNN)
     else
-        assert(networkParams.modelName, "Must have given a model to train.")
-        self:prepSpeechModel(networkParams.modelName, networkParams.rnn_type,
-            networkParams.hidden_size, networkParams.num_layers, networkParams.dictSize)
+        assert(self.opts.modelName, "Must have given a model to train.")
+        self:prepSpeechModel()
     end
-    --assert((networkParams.saveModel or networkParams.loadModel) and
-    --    networkParams.fileName, "To save/load you must specify the fileName you want to save to")
 
     -- setting online loading
 
-    self.werTester = WEREvaluator(self.validationSetLMDBPath, self.mapper,
-        networkParams.validationBatchSize, networkParams.validationIterations,
-        self.logsValidationPath, networkParams.feature, networkParams.dataHeight,
-        networkParams.modelName)
+    self.werTester = WEREvaluator(self.opts.validationSetLMDBPath,
+                                  Mapper(self.opts.dictionaryPath),
+                                  self.opts.validationBatchSize,
+                                  self.opts.validationIterations,
+                                  self.opts.logsValidationPath,
+                                  self.opts.feature, self.opts.dataHeight,
+                                  self.opts.modelName)
 
-    self.logger = optim.Logger(self.logsTrainPath .. 'train' .. suffix .. '.log')
+    self.logger = optim.Logger(self.opts.logsTrainPath .. 'train' .. suffix .. '.log')
     self.logger:setNames { '    loss    ', '    WER' }
     self.logger:style { '-', '-' }
 
-    self.trainLoader = Loader(networkParams.trainingSetLMDBPath,
-         networkParams.batchSize, networkParams.feature,
-         networkParams.dataHeight, networkParams.modelName)
+    self.trainLoader = Loader(self.opts.trainingSetLMDBPath,
+                              self.opts.batchSize, 
+                              self.opts.feature,
+                              self.opts.dataHeight,
+                              self.opts.modelName)
 --    self.trainLoader.lmdb_size = 2
     --self.trainLoader:prep_sorted_inds()
 end
 
-function Network:prepSpeechModel(modelName, rnn_type, hidden_size, num_layers, dict_size)
-    local model = require(modelName)
-    self.model = model[1](rnn_type, hidden_size, num_layers, dict_size, self.nGPU, self.isCUDNN)
+function Network:prepSpeechModel()
+    local model = require(self.opts.modelName)
+    self.model = model[1](self.opts.rnn_type,
+                          self.opts.hidden_size,
+                          self.opts.num_layers,
+                          self.opts.dictSize,
+                          self.opts.nGPU,
+                          self.opts.isCUDNN)
     self.calSizeOfSequences = model[2]
 end
 
-local function replace(self, callback)
-  local out = callback(self)
-  if self.modules then
-    for i, module in ipairs(self.modules) do
-      self.modules[i] = replace(module, callback)
-    end
-  end
-  return out
-end
-
 local function convertBN(net, dst)
-    return replace(net, function(x)
+    local toCUDNN = not (dst == nn)
+    local function rpl(x)
         local y = 0
-        local src = dst == nn and cudnn or nn
-        local src_prefix = src == nn and 'nn.' or 'cudnn.'
-        local dst_prefix = dst == nn and 'nn.' or 'cudnn.'
-        -- print (torch.typename(x), src_prefix..'BatchNormalization')
+        local src_prefix = toCUDNN and 'nn.' or 'cudnn.'
+        local dst_prefix = toCUDNN and 'cudnn.' or 'nn.'
+    --    print (torch.typename(x), src_prefix..'BatchNormalization')
 
         local function convert(v)
             local y = {}
             torch.setmetatable(y, dst_prefix..v)
             for k,u in pairs(x) do y[k] = u end
-            if src == cudnn and x.clearDesc then x.clearDesc(y) end
-            -- print (v,' ',y)
+            if (not toCUDNN) and x.clearDesc then x.clearDesc(y) end
             return y
         end
         if torch.typename(x) == src_prefix..'BatchNormalization' then
-            -- print (x)
             y = convert('BatchNormalization')
         end
         return y == 0 and x or y
-    end)
+    end
+
+    local function replace(self, callback)
+        local out = callback(self)
+        if self.modules then
+            for i, module in ipairs(self.modules) do
+                self.modules[i] = replace(module, callback)
+            end
+        end
+        return out
+    end
+
+    local function impl_rpl(m)
+        replace(m, rpl)
+    end
+
+    if net.opts.isCUDNN then
+        if net.opts.nGPU > 1 then
+            net.model.impl:exec(impl_rpl)
+        else
+            net.model = replace(net.model, rpl)
+        end
+    end
 end
 
 function Network:testNetwork(currentIteration)
     self.model:evaluate()
-    require 'BNDecorator'
-    if self.isCUDNN then
-        if self.nGPU > 1 then
-            self.model.impl:exec(function(m, i)
-                convertBN(m, nn)
-            end)
-        else
-            self.model = convertBN(self.model, nn)
-        end
-    end
-    local results = self.werTester:getWER(self.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
+    convertBN(self, nn)
+    local results = self.werTester:getWER(self.opts.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
     self.model:zeroGradParameters()
-    if self.isCUDNN then
-        if self.nGPU > 1 then
-            self.model.impl:exec(function(m, i)
-                convertBN(m, cudnn)
-            end)
-        else
-            self.model = convertBN(self.model, cudnn)
-        end
-    end
+    convertBN(self, cudnn)
     self.model:training()
     return results
 end
@@ -155,10 +139,10 @@ function Network:trainNetwork()
     print('Number of network parameters: ' .. x:nElement())
 
     local criterion
-    if self.nGPU <= 1 then
+    if self.opts.nGPU <= 1 then
         criterion = nn.CTCCriterion()
     end
-    if self.nGPU == 1 then
+    if self.opts.nGPU == 1 then
         criterion = criterion:cuda()
     end
 
@@ -182,9 +166,9 @@ function Network:trainNetwork()
     local timer = torch.Timer()
     local averageLoss = 0
 
-    for i = 1, self.trainEpochs do
-	  local batch_type = i < 10 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
-        local batch_type = self.trainLoader.RANDOM
+    for i = 1, self.opts.epochs do
+	  local batch_type = i < 40 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+--        local batch_type = self.trainLoader.RANDOM
         for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
             local datatime = dataTimer:time().real
@@ -193,7 +177,7 @@ function Network:trainNetwork()
             sizes = self.calSizeOfSequences(sample.sizes)
             targets = sample.label
             labelcnt = sample.labelcnt
-            if self.nGPU > 0 then
+            if self.opts.nGPU > 0 then
                 inputs = sample.inputs:cuda()
                 sizes = sizes:cuda()
             end
@@ -234,24 +218,25 @@ function Network:trainNetwork()
             dataTimer:reset()
         end
         -- Testing
+	if i % 10 == 0 then
         local results = self:testNetwork(i)
         print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.WER * 100))
 
         table.insert(lossHistory, averageLoss) -- Add the average loss value to the logger.
         table.insert(validationHistory, 100 * results.WER)
         self.logger:add { averageLoss, 100 * results.WER }
-
+	end
         -- snapshot the model
-        if self.saveModel and i % self.saveModelIterations == 0 then
+        if self.opts.saveModel and i % self.opts.saveModelIterations == 0 then
             print("Saving model..")
-            self:saveNetwork(self.modelTrainingPath .. '_epoch_' .. i ..
-                suffix .. '_' .. self.fileName)
+            self:saveNetwork(self.opts.modelTrainingPath .. '_epoch_' .. i ..
+                suffix .. '_' .. self.opts.fileName)
         end
     end
 
     if self.saveModel then
         print("Saving model..")
-        self:saveNetwork(self.modelTrainingPath .. 'final_model' .. suffix .. '.t7')
+        self:saveNetwork(self.opts.modelTrainingPath .. 'final_model' .. suffix .. '.t7')
     end
 
     return lossHistory, validationHistory, minutesTaken
@@ -271,7 +256,7 @@ function Network:loadNetwork(saveName, modelName)
     local model
     self.prepSpeechModel(model, modelName)
     local weights, gradParameters = self.model:getParameters()
-    model = loadDataParallel(saveName, self.nGPU, self.isCUDNN)
+    model = loadDataParallel(saveName, self.opts.nGPU, self.opts.isCUDNN)
     local weights_to_copy, _ = model:getParameters()
     weights:copy(weights_to_copy)
 end

@@ -7,4 +7,5 @@ CTCSpeechRecognition.iml
 *.log
 *.log.eps
 *.t7
+*.txt
 Seq2Seq/
