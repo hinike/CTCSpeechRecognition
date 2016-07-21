@@ -22,6 +22,7 @@ function WEREvaluator:__init(_path, mapper, testBatchSize,
     self.suffix = '_' .. os.date('%Y%m%d_%H%M%S')
 
     self.testLoader = Loader(_path, testBatchSize, feature, dataHeight, modelname)
+--    self.testLoader.lmdb_size = 20
     self.ctc = nn.CTCCriterion():cuda()
 end
 
@@ -88,7 +89,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
         -- =============== evaluate WER ==================
         local batchWER = 0
         for j = 1, self.testBatchSize do
-            local prediction_single = predictions[j]
+            local prediction_single = predictions[j]:narrow(1, 1, sizes[j])
             local predict_tokens = Evaluator.predict2tokens(prediction_single, self.mapper)
             local WER = Evaluator.sequenceErrorRate(targets[j], predict_tokens)
             cumWER = cumWER + WER
@@ -101,7 +102,7 @@ function WEREvaluator:getWER(gpu, model, calSizeOfSequences, verbose, currentIte
 
     local function comp(a, b) return a.wer < b.wer end
 
-    table.sort(werPredictions, comp)
+--    table.sort(werPredictions, comp)
 
     if verbose then
         for index, werPrediction in ipairs(werPredictions) do
