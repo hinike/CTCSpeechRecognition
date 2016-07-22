@@ -11,10 +11,9 @@ local Evaluator = require 'Evaluator'
 local WEREvaluator = torch.class('WEREvaluator')
 
 function WEREvaluator:__init(_path, mapper, testBatchSize, 
-    nbOfTestIterations, logsPath, feature, dataHeight, modelname)
+    logsPath, feature, dataHeight, modelname)
 
     self.testBatchSize = testBatchSize
-    self.nbOfTestIterations = nbOfTestIterations
     self.feature = feature
 
     self.mapper = mapper
@@ -22,7 +21,6 @@ function WEREvaluator:__init(_path, mapper, testBatchSize,
     self.suffix = '_' .. os.date('%Y%m%d_%H%M%S')
 
     self.testLoader = Loader(_path, testBatchSize, feature, dataHeight, modelname)
---    self.testLoader.lmdb_size = 20
     self.ctc = nn.CTCCriterion():cuda()
 end
 

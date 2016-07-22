@@ -12,65 +12,6 @@ local suffix = '_' .. os.date('%Y%m%d_%H%M%S')
 local threads = require 'threads'
 local Network = {}
 
-function Network:init(networkParams)
-
-    self.opts = networkParams
-
-    self.opts.isCUDNN = self.opts.backend == 'cudnn'
-    if self.opts.nGPU <= 0 then
-        assert(not self.opts.isCUDNN)
-    end
-    assert(self.opts.batchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
-    assert(self.opts.validationBatchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
-
-    self:makeDirectories({ self.opts.logsTrainPath, self.opts.logsValidationPath, self.opts.modelTrainingPath })
-
-    -- TODO may not work for current version
-    -- setting model saving/loading
-    if (self.opts.loadModel) then
-        assert(self.opts.fileName, "Filename hasn't been given to load model.")
-        self:loadNetwork(self.opts.fileName,
-                         self.opts.modelName,
-                         self.opts.isCUDNN)
-    else
-        assert(self.opts.modelName, "Must have given a model to train.")
-        self:prepSpeechModel()
-    end
-
-    -- setting online loading
-
-    self.werTester = WEREvaluator(self.opts.validationSetLMDBPath,
-                                  Mapper(self.opts.dictionaryPath),
-                                  self.opts.validationBatchSize,
-                                  self.opts.validationIterations,
-                                  self.opts.logsValidationPath,
-                                  self.opts.feature, self.opts.dataHeight,
-                                  self.opts.modelName)
-
-    self.logger = optim.Logger(self.opts.logsTrainPath .. 'train' .. suffix .. '.log')
-    self.logger:setNames { '    loss    ', '    WER' }
-    self.logger:style { '-', '-' }
-
-    self.trainLoader = Loader(self.opts.trainingSetLMDBPath,
-                              self.opts.batchSize, 
-                              self.opts.feature,
-                              self.opts.dataHeight,
-                              self.opts.modelName)
-    self.trainLoader.lmdb_size = 132400
-    --self.trainLoader:prep_sorted_inds()
-end
-
-function Network:prepSpeechModel()
-    local model = require(self.opts.modelName)
-    self.model = model[1](self.opts.rnn_type,
-                          self.opts.hidden_size,
-                          self.opts.num_layers,
-                          self.opts.dictSize,
-                          self.opts.nGPU,
-                          self.opts.isCUDNN)
-    self.calSizeOfSequences = model[2]
-end
-
 local function convertBN(net, dst)
     local toCUDNN = not (dst == nn)
     local function rpl(x)
@@ -115,10 +56,72 @@ local function convertBN(net, dst)
     end
 end
 
+function Network:init(networkParams)
+
+    self.opts = networkParams
+
+    self.opts.isCUDNN = self.opts.backend == 'cudnn'
+    if self.opts.nGPU <= 0 then
+        assert(not self.opts.isCUDNN)
+    end
+    assert(self.opts.batchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
+    assert(self.opts.validationBatchSize % self.opts.nGPU == 0, 'batch size must be the multiple of nGPU')
+
+    self:makeDirectories({ self.opts.logsTrainPath, self.opts.logsValidationPath, self.opts.modelTrainingPath })
+
+    -- TODO may not work for current version
+    -- setting model saving/loading
+    if (self.opts.loadModel) then
+        assert(self.opts.fileName, "Filename hasn't been given to load model.")
+        self:loadNetwork(self.opts.fileName,
+                         self.opts.modelName,
+                         self.opts.isCUDNN)
+    else
+        assert(self.opts.modelName, "Must have given a model to train.")
+        self:prepSpeechModel()
+    end
+
+    -- setting online loading
+
+    self.werTester = WEREvaluator(self.opts.validationSetLMDBPath,
+                                  Mapper(self.opts.dictionaryPath),
+                                  self.opts.validationBatchSize,
+                                  self.opts.logsValidationPath,
+                                  self.opts.feature, self.opts.dataHeight,
+                                  self.opts.modelName)
+
+    self.logger = optim.Logger(self.opts.logsTrainPath .. 'train' .. suffix .. '.log')
+    self.logger:setNames { '    loss    ', '    WER' }
+    self.logger:style { '-', '-' }
+
+    self.trainLoader = Loader(self.opts.trainingSetLMDBPath,
+                              self.opts.batchSize, 
+                              self.opts.feature,
+                              self.opts.dataHeight,
+                              self.opts.modelName)
+    self.trainLoader.lmdb_size = 132400
+    --self.trainLoader:prep_sorted_inds()
+end
+
+function Network:prepSpeechModel()
+    local model = require(self.opts.modelName)
+    self.model = model[1](self.opts.rnn_type,
+                          self.opts.hidden_size,
+                          self.opts.num_layers,
+                          self.opts.dictSize,
+                          self.opts.nGPU,
+                          self.opts.isCUDNN)
+    self.calSizeOfSequences = model[2]
+end
+
+
 function Network:testNetwork(currentIteration)
-    self.model:evaluate()
     convertBN(self, nn)
-    local results = self.werTester:getWER(self.opts.nGPU > 0, self.model, self.calSizeOfSequences, true, currentIteration) -- details in log
+    self.model:evaluate()
+    local results = self.werTester:getWER(self.opts.nGPU > 0,
+                                          self.model,
+                                          self.calSizeOfSequences,
+                                          true, currentIteration) -- details in log
     self.model:zeroGradParameters()
     convertBN(self, cudnn)
     self.model:training()
@@ -167,7 +170,7 @@ function Network:trainNetwork()
     local averageLoss = 0
 
     for i = 1, self.opts.epochs do
---	  local batch_type = i < 40 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+--	  local batch_type = i < 4000000 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
         local batch_type = self.trainLoader.RANDOM
         for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
