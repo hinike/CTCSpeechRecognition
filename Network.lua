@@ -56,7 +56,7 @@ function Network:init(networkParams)
                               self.opts.feature,
                               self.opts.dataHeight,
                               self.opts.modelName)
---    self.trainLoader.lmdb_size = 2
+    self.trainLoader.lmdb_size = 132400
     --self.trainLoader:prep_sorted_inds()
 end
 
@@ -167,8 +167,8 @@ function Network:trainNetwork()
     local averageLoss = 0
 
     for i = 1, self.opts.epochs do
-	  local batch_type = i < 40 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
---        local batch_type = self.trainLoader.RANDOM
+--	  local batch_type = i < 40 and self.trainLoader.DEFAULT or self.trainLoader.RANDOM
+        local batch_type = self.trainLoader.RANDOM
         for n, sample in self.trainLoader:nxt_batch(batch_type) do
             --------------------- data load ------------------------
             local datatime = dataTimer:time().real
@@ -218,7 +218,7 @@ function Network:trainNetwork()
             dataTimer:reset()
         end
         -- Testing
-	if i % 10 == 0 then
+--	if i % 50 == 0 then
         local results = self:testNetwork(i)
         print(('TESTING EPOCH: [%d]. Loss: %1.3f WER: %2.2f%%.'):format(i, results.loss, results.WER * 100))
 
@@ -232,7 +232,7 @@ function Network:trainNetwork()
             self:saveNetwork(self.opts.modelTrainingPath .. '_epoch_' .. i ..
                 suffix .. '_' .. self.opts.fileName)
         end
-    end
+  --  end
 
     if self.saveModel then
         print("Saving model..")
