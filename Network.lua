@@ -237,7 +237,7 @@ function Network:trainNetwork()
         end
   --  end
 
-    if self.saveModel then
+    if self.opts.saveModel then
         print("Saving model..")
         self:saveNetwork(self.opts.modelTrainingPath .. 'final_model' .. suffix .. '.t7')
     end
