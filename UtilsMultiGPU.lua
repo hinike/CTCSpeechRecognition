@@ -37,7 +37,7 @@ end
 
 local function cleanDPT(module)
     local newDPT = nn.DataParallelTableTrans(1)
-    newDPT:add(module:get(1):clone('weight','bias','running_mean','running_var'), 1)
+    newDPT:add(module:get(1):float():clone('weight','bias','running_mean','running_var'), 1)
     return newDPT
 end
 
@@ -47,7 +47,6 @@ function saveDataParallel(filename, orgModel)
     if model_type == 'nn.DataParallelTable' or
         model_type == 'nn.DataParallelTableTrans' then
         model = cleanDPT(orgModel)
-        model:clearState()
     elseif model_type == 'nn.Sequential' then
         local temp_model = nn.Sequential()
         for i, module in ipairs(model.modules) do
@@ -56,7 +55,7 @@ function saveDataParallel(filename, orgModel)
                 temp_model:add(cleanDPT(module))
 
             else
-                temp_model:add(module:clone('weight','bias','running_mean','running_var'))
+                temp_model:add(module:float():clone('weight','bias','running_mean','running_var'))
             end
         end
         model = temp_model
@@ -89,6 +88,8 @@ function saveDataParallel(filename, orgModel)
     --        end
     --    end
     --end
+    model:clearState()
+    collectgarbage()
     torch.save(filename, model)
 end
 
